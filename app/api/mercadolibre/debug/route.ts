@@ -10,10 +10,10 @@ const UAs = {
   curl: 'curl/8.4.0',
 };
 
-async function probe(url: string, ua: string) {
+async function probe(url: string, ua: string, extra?: Record<string, string>) {
   try {
     const res = await fetch(url, {
-      headers: { 'User-Agent': ua, Accept: 'text/html', 'Accept-Language': 'es-AR,es;q=0.9' },
+      headers: { 'User-Agent': ua, Accept: 'text/html', 'Accept-Language': 'es-AR,es;q=0.9', ...extra },
       signal: AbortSignal.timeout(10_000),
     });
     const html = await res.text();
@@ -26,6 +26,7 @@ async function probe(url: string, ua: string) {
       hasChallenge: html.includes('verifyChallenge'),
       title: html.match(/<title>([^<]*)<\/title>/)?.[1]?.trim().slice(0, 80) ?? null,
       priceCount: (html.match(/"price":\d+/g) ?? []).length,
+      bodyPreview: html.slice(0, 120),
     };
   } catch (e) {
     return { error: String(e) };
@@ -33,13 +34,23 @@ async function probe(url: string, ua: string) {
 }
 
 export async function GET(_req: NextRequest) {
-  const url = 'https://listado.mercadolibre.com.ar/masajeador-cervical';
+  const scrapeUrl = 'https://listado.mercadolibre.com.ar/masajeador-cervical';
+  const token = process.env.ML_ACCESS_TOKEN ?? '';
 
-  const [googlebot, chrome, curlUA] = await Promise.all([
-    probe(url, UAs.googlebot),
-    probe(url, UAs.chrome),
-    probe(url, UAs.curl),
+  const [googlebot, chrome, apiNoAuth, apiWithToken] = await Promise.all([
+    probe(scrapeUrl, UAs.googlebot),
+    probe(scrapeUrl, UAs.chrome),
+    // API public (no token) — is it IP-block or open?
+    fetch('https://api.mercadolibre.com/sites/MLA/search?q=masajeador&limit=3', {
+      headers: { Accept: 'application/json', 'User-Agent': UAs.chrome },
+      signal: AbortSignal.timeout(8_000),
+    }).then(async r => ({ status: r.status, policyAgent: r.headers.get('x-policy-agent-block-code'), body: (await r.text()).slice(0, 200) })).catch(e => ({ error: String(e) })),
+    // API with token
+    token ? fetch('https://api.mercadolibre.com/sites/MLA/search?q=masajeador&limit=3', {
+      headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(8_000),
+    }).then(async r => ({ status: r.status, policyAgent: r.headers.get('x-policy-agent-block-code'), body: (await r.text()).slice(0, 200) })).catch(e => ({ error: String(e) })) : { skipped: 'no token' },
   ]);
 
-  return NextResponse.json({ url, googlebot, chrome, curl: curlUA });
+  return NextResponse.json({ scrapeUrl, googlebot, chrome, apiNoAuth, apiWithToken });
 }
