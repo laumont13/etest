@@ -12,6 +12,9 @@ const nextConfig = {
   },
   experimental: {
     serverActions: { bodySizeLimit: '4mb' },
+    outputFileTracingExcludes: {
+      '*': ['puppeteer-core/**', 'chrome-aws-lambda/**'],
+    },
   },
 };
 
