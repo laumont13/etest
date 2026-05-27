@@ -92,7 +92,23 @@ async function solveBmPoW(bmstate: string): Promise<string> {
 }
 
 async function fetchPage(url: string, domain: string): Promise<string | null> {
-  // Primary: Googlebot UA — ML returns full SSR without bot protection
+  // If a proxy is configured (e.g. ScraperAPI), use it — bypasses cloud IP blocks
+  const proxyBase = process.env.ML_SCRAPER_PROXY_URL;
+  if (proxyBase) {
+    try {
+      const proxyUrl = `${proxyBase}${encodeURIComponent(url)}`;
+      const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(20_000) });
+      if (res.ok) {
+        const html = await res.text();
+        if (!html.includes('suspicious-traffic-frontend')) return html;
+      }
+      console.log('[ml-scrape] proxy returned suspicious page — falling through to direct');
+    } catch (err) {
+      console.error(`[ml-scrape] proxy fetch error: ${err}`);
+    }
+  }
+
+  // Primary: Googlebot UA — ML returns full SSR without bot protection (residential IPs only)
   try {
     const res = await fetch(url, {
       headers: crawlerHeaders(domain),
@@ -103,7 +119,7 @@ async function fetchPage(url: string, domain: string): Promise<string | null> {
       if (!html.includes('suspicious-traffic-frontend') && !html.includes('verifyChallenge')) {
         return html;
       }
-      console.log('[ml-scrape] Googlebot UA still hit challenge — falling back to PoW bypass');
+      console.log('[ml-scrape] Googlebot UA hit challenge — falling back to PoW bypass');
     }
   } catch (err) {
     console.error(`[ml-scrape] Googlebot fetch error: ${err}`);
