@@ -1,6 +1,7 @@
 import type { SourceState } from './source-status';
 import { getCountry } from './countries';
 import { getMLToken } from './ml-auth';
+import { scrapeMercadoLibre } from './ml-scraper';
 
 const SITE_BY_COUNTRY: Record<string, string> = {
   AR: 'MLA',
@@ -111,7 +112,8 @@ export async function fetchMercadoLibreSignals(
       }
     }
     if (res.status === 403) {
-      return empty({ status: 'blocked', reason: `ML devolvió 403 — endpoint bloqueado o IP bloqueada` }, tried);
+      console.log(`[ml] 403 PolicyAgent — activando fallback por scraping para "${q}"`);
+      return await scrapeFallback(q, site, tried);
     }
     if (res.status === 429) {
       return empty({ status: 'rate_limited', reason: 'ML devolvió 429 — límite de peticiones alcanzado' }, tried);
@@ -172,6 +174,49 @@ export async function fetchMercadoLibreSignals(
     status: 'no_results',
     reason: `No se encontraron competidores directos en ML ${site} — producto muy específico o sin categoría establecida`,
   }, tried);
+}
+
+async function scrapeFallback(
+  query: string,
+  site: string,
+  tried: string[],
+): Promise<ReturnType<typeof fetchMercadoLibreSignals>> {
+  // Build query variants: specific → generic (mirrors API variant logic)
+  const words = query.trim().split(/\s+/);
+  const variants = [query];
+  if (words.length >= 3) variants.push(words.slice(0, 2).join(' '));
+  if (words.length >= 2) variants.push(words[0]);
+
+  for (const q of variants) {
+    const scraped = await scrapeMercadoLibre(q, site);
+    if (!scraped) continue;
+    if (scraped.topResults.length === 0 && scraped.competitors === 0) {
+      continue; // zero results — try more generic
+    }
+    if (scraped.topResults.length === 0) continue;
+
+    return {
+      competitors: scraped.competitors,
+      priceRange: scraped.priceRange,
+      currency: scraped.currency,
+      source: {
+        status: 'ok',
+        reason: `${fmtNum(scraped.competitors ?? scraped.topResults.length)} publicaciones en ML ${site} vía scraping (query: "${q}") — precio promedio: ${scraped.currency} ${fmtNum(scraped.avgPrice ?? 0)}`,
+      },
+      queriesTried: [...tried, `[scrape] ${q}`],
+    };
+  }
+
+  return {
+    competitors: null,
+    priceRange: null,
+    currency: null,
+    source: {
+      status: 'blocked',
+      reason: 'ML API (PolicyAgent 403) y scraping bloqueados — app no certificada o bot protection activa',
+    },
+    queriesTried: tried,
+  };
 }
 
 function fmtNum(n: number): string {
