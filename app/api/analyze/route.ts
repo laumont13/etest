@@ -22,6 +22,8 @@ import { computeConfidence } from '@/lib/source-status';
 
 export const runtime = 'nodejs';
 export const maxDuration = 90;
+// GRU1 (São Paulo) bypasses ML bot-detection that blocks US datacenter IPs
+export const preferredRegion = ['gru1', 'iad1'];
 
 const Body = z.object({
   title: z.string().min(2).max(200),
