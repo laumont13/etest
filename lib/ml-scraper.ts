@@ -97,7 +97,7 @@ async function fetchPage(url: string, domain: string): Promise<string | null> {
   if (proxyBase) {
     try {
       const proxyUrl = `${proxyBase}${encodeURIComponent(url)}`;
-      const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(20_000) });
+      const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(30_000) });
       if (res.ok) {
         const html = await res.text();
         if (!html.includes('suspicious-traffic-frontend')) return html;
