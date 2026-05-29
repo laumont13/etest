@@ -16,6 +16,8 @@ import { evaluateMargin, computeScore } from '@/lib/scoring';
 import { analyzeProduct, extractSearchTerm, type MarketSignals } from '@/lib/gemini';
 import { fetchTrends } from '@/lib/trends';
 import { fetchMercadoLibreSignals } from '@/lib/mercadolibre';
+import { fetchGoogleMarketSignals } from '@/lib/google-market';
+import { fetchSupplierSignals } from '@/lib/supplier-signals';
 import { getCountry } from '@/lib/countries';
 import { saveAnalysis } from '@/lib/supabase';
 import { computeConfidence } from '@/lib/source-status';
@@ -67,21 +69,39 @@ export async function POST(req: NextRequest) {
   const { searchTerm, category } = await extractSearchTerm(body.title, body.description);
 
   // 3. Señales reales en paralelo. Degradan a null si fallan; siempre devuelven status.
-  const [trends, ml] = await Promise.all([
+  const [trends, ml, googleMarket, supplier] = await Promise.all([
     fetchTrends(searchTerm, country.trendsGeo, category),
     fetchMercadoLibreSignals(searchTerm, body.country),
+    fetchGoogleMarketSignals(searchTerm, body.country),
+    fetchSupplierSignals(searchTerm),
   ]);
 
   console.log(`[analyze] trends.source=${trends.source.status} — ${trends.source.reason}`);
   console.log(`[analyze] ml.source=${ml.source.status} — ${ml.source.reason}`);
+  console.log(`[analyze] googleMarket.source=${googleMarket.source.status} — ${googleMarket.source.reason}`);
+  console.log(`[analyze] supplier.source=${supplier.source.status} — ${supplier.source.reason}`);
   console.log(`[analyze] trends.keywordsTried=${trends.keywordsTried.join(', ')}`);
   console.log(`[analyze] ml.queriesTried=${ml.queriesTried.join(', ')}`);
+
+  // If ML scraping was blocked, fall back to Google's ML listing estimate silently
+  const mlCompetitorsEffective = ml.competitors ?? googleMarket.mlEstimatedListings;
+  const mlFallbackUsed = ml.competitors === null && googleMarket.mlEstimatedListings !== null;
+  if (mlFallbackUsed) {
+    console.log(`[analyze] ML fallback: using Google estimate ${googleMarket.mlEstimatedListings} competitors`);
+  }
 
   const signals: MarketSignals = {
     trendsInterest: trends.interest,
     trendDirection: trends.direction,
-    mlCompetitors: ml.competitors,
+    mlCompetitors: mlCompetitorsEffective,
     mlPriceRange: ml.priceRange,
+    googleMLEstimate: googleMarket.mlEstimatedListings,
+    argPriceRange: googleMarket.argPriceRange,
+    argCurrency: googleMarket.argCurrency,
+    supplierPriceRangeUSD: supplier.priceRangeUSD,
+    supplierCount: supplier.supplierCount,
+    supplierMOQ: supplier.moqMin,
+    supplierMOQUnit: supplier.moqUnit,
     country: country.name,
   };
 
@@ -109,7 +129,12 @@ export async function POST(req: NextRequest) {
   }
 
   // 5. Scoring determinístico con penalización por datos faltantes
-  const confidence = computeConfidence([trends.source.status, ml.source.status]);
+  const confidence = computeConfidence([
+    trends.source.status,
+    ml.source.status,
+    googleMarket.source.status,
+    supplier.source.status,
+  ]);
   console.log(`[analyze] confidence=${confidence.level} penalty=${confidence.penalty}`);
   const result = computeScore(analysis.dimensions, margin, {
     dataPenalty: confidence.penalty,
@@ -119,10 +144,18 @@ export async function POST(req: NextRequest) {
 
   const sourceStatuses = {
     trends: { ...trends.source, keywordsTried: trends.keywordsTried },
-    mercadoLibre: { ...ml.source, queriesTried: ml.queriesTried },
+    mercadoLibre: mlFallbackUsed
+      ? {
+          status: 'ok' as const,
+          reason: `~${new Intl.NumberFormat('es').format(googleMarket.mlEstimatedListings!)} publicaciones estimadas vía Google (ML scraping no disponible)`,
+          queriesTried: ml.queriesTried,
+        }
+      : { ...ml.source, queriesTried: ml.queriesTried },
     prices: ml.priceRange !== null
       ? { status: 'ok' as const, reason: `Rango de precios obtenido de ML (${ml.queriesTried.at(-1)})` }
-      : { status: ml.source.status, reason: ml.source.reason },
+      : { status: googleMarket.argPriceRange ? 'ok' as const : ml.source.status, reason: googleMarket.argPriceRange ? googleMarket.source.reason : ml.source.reason },
+    googleMarket: { ...googleMarket.source, queriesTried: googleMarket.queriesTried },
+    supplier: supplier.source,
   };
 
   const payload = {

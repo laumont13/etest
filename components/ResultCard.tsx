@@ -1,7 +1,8 @@
-﻿'use client';
+'use client';
 
 import type { Verdict } from '@/lib/scoring';
 import type { SourceStatus } from '@/lib/source-status';
+import { SOURCE_STATUS_LABELS } from '@/lib/source-status';
 
 interface SourceInfo {
   status: SourceStatus;
@@ -18,11 +19,20 @@ interface AnalysisPayload {
     trendDirection: string;
     mlCompetitors: number | null;
     mlPriceRange: [number, number] | null;
+    googleMLEstimate: number | null;
+    argPriceRange: [number, number] | null;
+    argCurrency: string | null;
+    supplierPriceRangeUSD: [number, number] | null;
+    supplierCount: number | null;
+    supplierMOQ: number | null;
+    supplierMOQUnit: string | null;
   };
   sourceStatuses?: {
     trends: SourceInfo;
     mercadoLibre: SourceInfo;
     prices: SourceInfo;
+    googleMarket?: SourceInfo & { queriesTried?: string[] };
+    supplier?: SourceInfo;
   };
   analysis: {
     positioning: string;
@@ -43,13 +53,42 @@ interface AnalysisPayload {
   };
 }
 
+export interface RankInfo {
+  position: number;
+  total: number;
+  isNewLeader: boolean;
+  scoreDelta: number | null;
+  leaderTitle: string | null;
+}
+
 const VERDICT_META: Record<Verdict, { label: string; color: string; bg: string; emoji: string }> = {
   go: { label: 'Avanzar', color: '#4ADE80', bg: 'rgba(74,222,128,0.1)', emoji: '→' },
   maybe: { label: 'Dudoso', color: '#FACC15', bg: 'rgba(250,204,21,0.1)', emoji: '~' },
   kill: { label: 'Descartar', color: '#F87171', bg: 'rgba(248,113,113,0.1)', emoji: '✕' },
 };
 
-export default function ResultCard({ data }: { data: AnalysisPayload }) {
+function rankColor(pos: number): string {
+  if (pos === 1) return '#B8FF5C';
+  if (pos === 2) return '#FACC15';
+  if (pos === 3) return '#FB923C';
+  return 'rgba(255,255,255,0.36)';
+}
+
+function shortTitle(title: string | null, words = 4): string {
+  if (!title) return '';
+  const parts = title.split(' ').slice(0, words);
+  return parts.join(' ') + (title.split(' ').length > words ? '…' : '');
+}
+
+export default function ResultCard({
+  data,
+  onBattle,
+  rankInfo,
+}: {
+  data: AnalysisPayload;
+  onBattle?: () => void;
+  rankInfo?: RankInfo | null;
+}) {
   const v = VERDICT_META[data.result.verdict];
   const adjustedScore = data.result.adjustedScore ?? data.result.score;
   const dataPenalty = data.result.dataPenalty ?? 0;
@@ -57,8 +96,67 @@ export default function ResultCard({ data }: { data: AnalysisPayload }) {
   const confidenceLabel = data.result.confidenceLabel ?? 'Alta';
   const showAdjusted = dataPenalty > 0;
 
+  const battleLabel = (() => {
+    if (!rankInfo || rankInfo.total <= 1) return '⚔ Comparar con otro producto';
+    if (rankInfo.isNewLeader) return '⚔ Sos el #1 — ¿puede otro destronarte?';
+    if (rankInfo.leaderTitle) return `⚔ ¿Puede ganarle a ${shortTitle(rankInfo.leaderTitle, 3)}?`;
+    return '⚔ Comparar con otro producto';
+  })();
+
   return (
     <div className="animate-fade-up space-y-5">
+
+      {/* Rank position banner */}
+      {rankInfo && rankInfo.total > 1 && (
+        rankInfo.isNewLeader ? (
+          <div
+            className="rounded-2xl border p-4 sm:p-5 text-center"
+            style={{ borderColor: 'rgba(184,255,92,0.4)', background: 'rgba(184,255,92,0.07)' }}
+          >
+            <div
+              className="text-[10px] font-mono uppercase tracking-[0.22em] mb-2"
+              style={{ color: '#B8FF5C' }}
+            >
+              ★ Nuevo líder
+            </div>
+            <div
+              className="font-display text-5xl sm:text-6xl leading-none mb-2"
+              style={{ color: '#B8FF5C' }}
+            >
+              #1
+            </div>
+            <div className="text-xs text-text-40 leading-relaxed">
+              Este producto encabeza tu ranking — defendé el trono.
+            </div>
+          </div>
+        ) : (
+          <div
+            className="rounded-xl border border-border-soft bg-bg-1/80 px-4 py-3 flex items-center gap-4"
+          >
+            <div
+              className="font-display text-3xl tabular-nums shrink-0 leading-none"
+              style={{ color: rankColor(rankInfo.position) }}
+            >
+              #{rankInfo.position}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs text-text-60">de {rankInfo.total} en tu ranking</div>
+              {rankInfo.scoreDelta !== null && (
+                <div className="text-[11px] font-mono mt-0.5" style={{ color: '#F87171' }}>
+                  {rankInfo.scoreDelta > 0 ? '+' : ''}{rankInfo.scoreDelta} pts del líder
+                </div>
+              )}
+            </div>
+            {rankInfo.leaderTitle && (
+              <div className="text-[10px] text-text-30 text-right shrink-0 max-w-[110px] leading-tight">
+                Líder:<br />
+                <span className="text-text-40">{shortTitle(rankInfo.leaderTitle, 3)}</span>
+              </div>
+            )}
+          </div>
+        )
+      )}
+
       {/* Encabezado: veredicto + score */}
       <div
         className="rounded-2xl border p-6 sm:p-8"
@@ -100,6 +198,22 @@ export default function ResultCard({ data }: { data: AnalysisPayload }) {
         </p>
       </div>
 
+      {/* Battle CTA */}
+      {onBattle && (
+        <button
+          onClick={onBattle}
+          className="w-full py-4 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2"
+          style={{
+            background: 'rgba(184,255,92,0.1)',
+            border: '1px solid rgba(184,255,92,0.3)',
+            color: '#B8FF5C',
+          }}
+        >
+          {battleLabel}
+          <span className="text-xs font-mono opacity-60 ml-1">→</span>
+        </button>
+      )}
+
       {/* Filtros */}
       <div className="grid grid-cols-3 gap-3">
         <FilterBar label="¿Existe el negocio?" value={data.result.filters.business} />
@@ -126,9 +240,21 @@ export default function ResultCard({ data }: { data: AnalysisPayload }) {
           />
           <Signal
             label="Competidores ML"
-            value={data.signals.mlCompetitors !== null ? fmt(data.signals.mlCompetitors) : unavailableLabel(data.sourceStatuses?.mercadoLibre.status)}
-            sub={data.signals.mlCompetitors !== null ? 'publicaciones' : ''}
-            status={data.sourceStatuses?.mercadoLibre.status}
+            value={
+              data.signals.mlCompetitors !== null
+                ? fmt(data.signals.mlCompetitors)
+                : data.signals.googleMLEstimate !== null
+                ? `~${fmt(data.signals.googleMLEstimate)}`
+                : unavailableLabel(data.sourceStatuses?.mercadoLibre.status)
+            }
+            sub={
+              data.signals.mlCompetitors !== null
+                ? 'publicaciones'
+                : data.signals.googleMLEstimate !== null
+                ? 'est. vía Google'
+                : ''
+            }
+            status={data.signals.mlCompetitors === null && data.signals.googleMLEstimate === null ? data.sourceStatuses?.mercadoLibre.status : undefined}
           />
           <Signal
             label="Margen"
@@ -136,17 +262,49 @@ export default function ResultCard({ data }: { data: AnalysisPayload }) {
             sub={`${Math.round(data.margin.marginPct * 100)}% sobre venta`}
           />
           <Signal
-            label="Rango precios ML"
+            label={data.signals.mlPriceRange ? 'Rango precios ML' : `Precios ${data.signals.argCurrency ?? 'ARS'}`}
             value={
               data.signals.mlPriceRange
                 ? `${fmt(data.signals.mlPriceRange[0])}–${fmt(data.signals.mlPriceRange[1])}`
+                : data.signals.argPriceRange
+                ? `${fmt(data.signals.argPriceRange[0])}–${fmt(data.signals.argPriceRange[1])}`
                 : unavailableLabel(data.sourceStatuses?.prices.status)
             }
-            sub={data.signals.mlPriceRange ? 'competencia' : ''}
-            status={data.signals.mlPriceRange ? undefined : data.sourceStatuses?.prices.status}
+            sub={data.signals.mlPriceRange ? 'competencia ML' : data.signals.argPriceRange ? 'Google Shopping' : ''}
+            status={!data.signals.mlPriceRange && !data.signals.argPriceRange ? data.sourceStatuses?.prices.status : undefined}
           />
         </div>
       </div>
+
+      {/* Señales de proveedor (Alibaba) */}
+      {(data.signals.supplierPriceRangeUSD || data.signals.supplierCount !== null || data.signals.supplierMOQ !== null) && (
+        <div className="rounded-2xl border border-border-soft bg-bg-1/80 p-5 sm:p-6">
+          <h3 className="font-display text-lg mb-4">Señales de proveedor (Alibaba)</h3>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
+            {data.signals.supplierPriceRangeUSD && (
+              <Signal
+                label="Precio FOB (USD)"
+                value={`$${data.signals.supplierPriceRangeUSD[0]}–$${data.signals.supplierPriceRangeUSD[1]}`}
+                sub="por unidad"
+              />
+            )}
+            {data.signals.supplierCount !== null && (
+              <Signal
+                label="Proveedores"
+                value={fmt(data.signals.supplierCount)}
+                sub="en Alibaba"
+              />
+            )}
+            {data.signals.supplierMOQ !== null && (
+              <Signal
+                label="MOQ mínimo"
+                value={fmt(data.signals.supplierMOQ)}
+                sub={data.signals.supplierMOQUnit ?? 'unidades'}
+              />
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Estado de fuentes */}
       <div className="rounded-2xl border border-border-soft bg-bg-1/80 p-5 sm:p-6">
@@ -173,6 +331,18 @@ export default function ResultCard({ data }: { data: AnalysisPayload }) {
             label="Precios ML"
             info={data.sourceStatuses?.prices}
             fallbackStatus={data.signals.mlPriceRange ? 'ok' : 'no_results'}
+          />
+          <SourceRow
+            label="Google Market"
+            info={data.sourceStatuses?.googleMarket}
+            fallbackStatus="not_configured"
+            extra={data.sourceStatuses?.googleMarket?.queriesTried}
+            extraLabel="queries"
+          />
+          <SourceRow
+            label="Alibaba"
+            info={data.sourceStatuses?.supplier}
+            fallbackStatus="not_configured"
           />
         </div>
         {confidence === 'low' && (
@@ -296,8 +466,7 @@ const STATUS_COLORS: Record<SourceStatus, string> = {
   ok: '#4ADE80',
   low_volume: '#FACC15',
   no_results: '#FB923C',
-  blocked: '#F87171',
-  unauthorized: '#F87171',
+  blocked: 'rgba(255,255,255,0.36)',
   rate_limited: '#FB923C',
   not_configured: 'rgba(255,255,255,0.24)',
   error: '#F87171',
@@ -307,8 +476,7 @@ const STATUS_DOT: Record<SourceStatus, string> = {
   ok: '●',
   low_volume: '◑',
   no_results: '○',
-  blocked: '✕',
-  unauthorized: '✕',
+  blocked: '—',
   rate_limited: '⏳',
   not_configured: '—',
   error: '✕',
@@ -317,12 +485,11 @@ const STATUS_DOT: Record<SourceStatus, string> = {
 function unavailableLabel(status?: SourceStatus): string {
   if (!status || status === 'ok' || status === 'low_volume') return 'N/D';
   const map: Partial<Record<SourceStatus, string>> = {
-    no_results: 'Sin resultados',
-    not_configured: 'No configurado',
-    blocked: 'Bloqueado',
-    unauthorized: 'Sin acceso',
-    rate_limited: 'Límite alcanzado',
-    error: 'Error',
+    no_results: 'Sin datos',
+    not_configured: 'N/D',
+    blocked: 'N/D',
+    rate_limited: 'N/D',
+    error: 'N/D',
   };
   return map[status] ?? 'N/D';
 }
@@ -366,7 +533,7 @@ function SourceRow({
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs font-mono text-text-60 shrink-0">{label}</span>
           <span className="text-[10px] font-mono uppercase tracking-wide px-1.5 py-0.5 rounded" style={{ background: `${color}18`, color }}>
-            {status.replace('_', ' ')}
+            {SOURCE_STATUS_LABELS[status] ?? status}
           </span>
         </div>
         {reason && <p className="text-[11px] text-text-40 mt-0.5 leading-snug">{reason}</p>}

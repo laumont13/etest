@@ -11,6 +11,9 @@
     },
     "app/api/py-trends/route.ts": {
       "maxDuration": 30
+    },
+    "app/api/battle/route.ts": {
+      "maxDuration": 60
     }
   }
 }

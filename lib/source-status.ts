@@ -3,7 +3,6 @@ export type SourceStatus =
   | 'no_results'
   | 'low_volume'
   | 'blocked'
-  | 'unauthorized'
   | 'rate_limited'
   | 'not_configured'
   | 'error';
@@ -22,13 +21,12 @@ export interface ConfidenceResult {
 }
 
 export const SOURCE_STATUS_LABELS: Record<SourceStatus, string> = {
-  ok: 'OK',
+  ok: 'Disponible',
   no_results: 'Sin resultados',
   low_volume: 'Volumen bajo',
-  blocked: 'Bloqueado',
-  unauthorized: 'Sin autorización',
-  rate_limited: 'Límite de peticiones',
-  not_configured: 'No configurado',
+  blocked: 'Sin respuesta',
+  rate_limited: 'Límite alcanzado',
+  not_configured: 'No disponible',
   error: 'Error',
 };
 
