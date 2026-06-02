@@ -538,6 +538,7 @@ function buildFallback(data: any): any {
 
 // ─── Gemini call ─────────────────────────────────────────────────────────────
 async function generatePreSample(data: any): Promise<any> {
+  if (process.env.TEMP_AI_BYPASS === 'true') return buildFallback(data);
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return buildFallback(data);
 
