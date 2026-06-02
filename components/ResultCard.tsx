@@ -51,6 +51,8 @@ interface AnalysisPayload {
     breakdown: { key: string; label: string; weighted: number; raw: number }[];
     reason: string;
   };
+  // TEMPORARY DEVELOPMENT BYPASS — present only when TEMP_AI_BYPASS=true
+  aiBypassWarning?: string;
 }
 
 export interface RankInfo {
@@ -105,6 +107,16 @@ export default function ResultCard({
 
   return (
     <div className="animate-fade-up space-y-5">
+
+      {/* TEMPORARY DEVELOPMENT BYPASS warning — only shown when TEMP_AI_BYPASS=true */}
+      {data.aiBypassWarning && (
+        <div
+          className="rounded-xl border px-4 py-3 text-center text-xs font-mono"
+          style={{ borderColor: 'rgba(251,191,36,0.5)', background: 'rgba(251,191,36,0.08)', color: '#FBBF24' }}
+        >
+          ⚠ Modo temporal de desarrollo: análisis simulado. No se usó IA real.
+        </div>
+      )}
 
       {/* Rank position banner */}
       {rankInfo && rankInfo.total > 1 && (
@@ -197,6 +209,42 @@ export default function ResultCard({
           {data.result.reason}
         </p>
       </div>
+
+      {/* Discard explanation for kill verdict */}
+      {data.result.verdict === 'kill' && (
+        <div
+          className="rounded-2xl p-5"
+          style={{ background: 'rgba(248,113,113,0.06)', border: '1px solid rgba(248,113,113,0.18)' }}
+        >
+          <div className="text-xs font-mono uppercase tracking-[0.14em] mb-2" style={{ color: '#F87171' }}>
+            Descartado por señal crítica
+          </div>
+          <p className="text-sm text-text-80 leading-relaxed mb-3">
+            No significa que sea imposible venderlo. Significa que, con los datos actuales, no conviene
+            priorizarlo frente a otras oportunidades.
+          </p>
+          <div className="space-y-2 text-xs text-text-60 leading-snug">
+            <div>
+              <span className="text-text-40 font-mono">Señales que influyen en el descarte:</span>
+              <ul className="mt-1.5 space-y-1">
+                {data.analysis.keyRisks.slice(0, 3).map((r, i) => (
+                  <li key={i} className="flex gap-1.5">
+                    <span style={{ color: '#F87171' }}>·</span>
+                    {r}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="pt-2 border-t border-border-soft">
+              <span className="text-text-40 font-mono">Para reconsiderarlo:</span>
+              <p className="mt-1">
+                Revisá el costo del proveedor, el precio de venta posible y si podés diferenciar
+                la oferta. Si cambia alguna de esas variables, volvé a analizarlo con los nuevos números.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Battle CTA */}
       {onBattle && (

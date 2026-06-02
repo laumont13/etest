@@ -7,7 +7,7 @@ import AnalysisLoading from '@/components/AnalysisLoading';
 import ExportPdfButton from '@/components/ExportPdfButton';
 import HistoryPanel from '@/components/HistoryPanel';
 import BattleView from '@/components/BattleView';
-import PreSampleStudioView, { type PreSampleData } from '@/components/PreSampleStudioView';
+import LaunchBoardView, { type LaunchBoardData } from '@/components/LaunchBoardView';
 import { COUNTRY_LIST } from '@/lib/countries';
 import { evaluateMargin } from '@/lib/scoring';
 import {
@@ -75,12 +75,18 @@ export default function Home() {
   const [battleResult, setBattleResult] = useState<BattleResult | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [lastAddedId, setLastAddedId] = useState<string | null>(null);
-  const [preSampleData, setPreSampleData] = useState<PreSampleData | null>(null);
+  const [preSampleData, setPreSampleData] = useState<LaunchBoardData | null>(null);
   const [preSampleError, setPreSampleError] = useState<string | null>(null);
+
+  const BOARD_DATA_KEY = 'etest_board_data';
 
   useEffect(() => {
     setSessionId(getSessionId());
     setHistory(loadHistory());
+    try {
+      const saved = localStorage.getItem(BOARD_DATA_KEY);
+      if (saved) setPreSampleData(JSON.parse(saved));
+    } catch {}
   }, []);
 
   const gate = evaluateMargin({
@@ -255,6 +261,7 @@ export default function Home() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? 'Error');
       setPreSampleData(data);
+      try { localStorage.setItem('etest_board_data', JSON.stringify(data)); } catch {}
       setPhase('pre-sample');
     } catch {
       setPreSampleError('No se pudo generar el Pre-Sample Studio. Reintentá.');
@@ -272,7 +279,7 @@ export default function Home() {
   const displayData = viewingItem ? viewingItem.data : result;
 
   // Command center sidebar: always visible when there's history (except during initial analysis loading)
-  const showSidebar = hasHistory && phase !== 'loading' && phase !== 'pre-sample-loading';
+  const showSidebar = hasHistory && phase !== 'loading' && phase !== 'pre-sample-loading' && phase !== 'pre-sample';
 
   const historyPanel = (
     <HistoryPanel
@@ -309,20 +316,36 @@ export default function Home() {
                     E-Test
                   </span>
                 </div>
-                {/* Mobile command center toggle */}
-                {hasHistory && (
-                  <button
-                    onClick={() => setHistoryOpen(o => !o)}
-                    className="lg:hidden flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-mono transition-colors"
-                    style={{
-                      borderColor: historyOpen ? 'rgba(184,255,92,0.35)' : 'rgba(255,255,255,0.1)',
-                      color: historyOpen ? '#B8FF5C' : 'rgba(255,255,255,0.56)',
-                      background: historyOpen ? 'rgba(184,255,92,0.06)' : 'transparent',
-                    }}
-                  >
-                    ⚡ Ranking ({history.filter(h => h.status !== 'discarded').length})
-                  </button>
-                )}
+                <div className="flex items-center gap-2">
+                  {/* Board button — always accessible when data exists */}
+                  {preSampleData && phase !== 'pre-sample' && (
+                    <button
+                      onClick={() => setPhase('pre-sample')}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-mono transition-colors"
+                      style={{
+                        borderColor: 'rgba(184,255,92,0.35)',
+                        color: '#B8FF5C',
+                        background: 'rgba(184,255,92,0.06)',
+                      }}
+                    >
+                      ✦ Mi Board
+                    </button>
+                  )}
+                  {/* Mobile command center toggle */}
+                  {hasHistory && (
+                    <button
+                      onClick={() => setHistoryOpen(o => !o)}
+                      className="lg:hidden flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-mono transition-colors"
+                      style={{
+                        borderColor: historyOpen ? 'rgba(184,255,92,0.35)' : 'rgba(255,255,255,0.1)',
+                        color: historyOpen ? '#B8FF5C' : 'rgba(255,255,255,0.56)',
+                        background: historyOpen ? 'rgba(184,255,92,0.06)' : 'transparent',
+                      }}
+                    >
+                      ⚡ Ranking ({history.filter(h => h.status !== 'discarded').length})
+                    </button>
+                  )}
+                </div>
               </div>
               <h1 className="font-display text-4xl sm:text-5xl leading-[1.05] text-text-100 mb-3">
                 Validá productos antes
@@ -469,7 +492,7 @@ export default function Home() {
                   </div>
                 )}
                 <button
-                  onClick={openPreSample}
+                  onClick={preSampleData ? () => setPhase('pre-sample') : openPreSample}
                   className="w-full py-3.5 rounded-xl border text-sm font-medium transition-all"
                   style={{
                     background: 'rgba(184,255,92,0.06)',
@@ -477,7 +500,7 @@ export default function Home() {
                     color: '#B8FF5C',
                   }}
                 >
-                  ✦ Crear Pre-Sample Studio
+                  {preSampleData ? '✦ Abrir mi Launch Board' : '✦ Crear Launch Board'}
                 </button>
                 <div className="flex gap-3 flex-wrap">
                   <ExportPdfButton data={displayData} />
@@ -495,16 +518,15 @@ export default function Home() {
             {phase === 'pre-sample-loading' && (
               <div className="animate-fade-up flex flex-col items-center justify-center py-20 gap-4">
                 <div className="w-2 h-2 rounded-full bg-accent animate-pulse" />
-                <p className="text-text-60 text-sm">Generando Pre-Sample Studio…</p>
-                <p className="text-text-30 text-xs max-w-xs text-center">Creando identidad de marca, paletas, prompts y creativos. Puede tomar hasta 30 segundos.</p>
+                <p className="text-text-60 text-sm">Generando Launch Board…</p>
+                <p className="text-text-30 text-xs max-w-xs text-center">Creando ángulos, creativos, prompts de imagen y shot list. Puede tomar hasta 30 segundos.</p>
               </div>
             )}
 
-            {/* Pre-Sample Studio result */}
+            {/* Launch Board */}
             {phase === 'pre-sample' && preSampleData && (
-              <PreSampleStudioView
+              <LaunchBoardView
                 data={preSampleData}
-                productTitle={displayData?.product?.title}
                 onBack={() => setPhase('result')}
               />
             )}

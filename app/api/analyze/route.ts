@@ -13,7 +13,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { evaluateMargin, computeScore } from '@/lib/scoring';
-import { analyzeProduct, extractSearchTerm, type MarketSignals } from '@/lib/gemini';
+// TEMPORARY DEVELOPMENT BYPASS — remove TEMP_AI_BYPASS to restore original AI flow.
+import {
+  extractSearchTermWithBypass as extractSearchTerm,
+  analyzeProductWithBypass as analyzeProduct,
+  isBypassEnabled,
+  AI_BYPASS_WARNING,
+} from '@/lib/temp-ai-bypass';
+import type { MarketSignals } from '@/lib/gemini';
 import { fetchTrends } from '@/lib/trends';
 import { fetchMercadoLibreSignals } from '@/lib/mercadolibre';
 import { fetchGoogleMarketSignals } from '@/lib/google-market';
@@ -172,6 +179,7 @@ export async function POST(req: NextRequest) {
     analysis,
     result,
     generatedAt: new Date().toISOString(),
+    ...(isBypassEnabled() && { aiBypassWarning: AI_BYPASS_WARNING }),
   };
 
   // 5. Persistir (best-effort)

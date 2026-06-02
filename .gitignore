@@ -50,3 +50,8 @@ venv/
 .claude/
 
 .vercel
+
+# local check/temp files
+.env.vercel.check
+*.log
+etest-dev.log

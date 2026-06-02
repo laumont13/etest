@@ -347,7 +347,7 @@ export default function HistoryPanel({
                     </button>
                     <button
                       onClick={() => onStatusChange(item.id, 'discarded')}
-                      title="Descartar"
+                      title="Ocultar del ranking (podés restaurarlo después)"
                       className="w-6 h-6 rounded flex items-center justify-center text-[11px] transition-colors hover:text-score-red"
                       style={{ color: 'rgba(255,255,255,0.16)' }}
                     >
@@ -372,27 +372,37 @@ export default function HistoryPanel({
       {/* Discarded */}
       {discarded.length > 0 && (
         <div>
-          <div className="text-[10px] uppercase tracking-[0.14em] font-mono text-text-30 mb-1.5">
-            Descartados ({discarded.length})
+          <div className="text-[10px] uppercase tracking-[0.14em] font-mono text-text-30 mb-1">
+            Ocultos del ranking ({discarded.length})
           </div>
+          <p className="text-[10px] text-text-20 mb-2 leading-snug">
+            No eliminados — podés restaurarlos cuando quieras.
+          </p>
           <div className="space-y-1">
             {discarded.map(item => (
               <div
                 key={item.id}
-                className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg"
-                style={{ background: 'rgba(248,113,113,0.05)' }}
+                className="flex items-center gap-2 px-2.5 py-2 rounded-lg"
+                style={{ background: 'rgba(248,113,113,0.05)', border: '1px solid rgba(248,113,113,0.08)' }}
               >
                 <span className="flex-1 text-xs text-text-30 truncate">
                   {item.data?.product?.title ?? 'Sin título'}
                 </span>
                 <button
                   onClick={() => onStatusChange(item.id, 'active')}
-                  className="text-[10px] font-mono text-text-30 hover:text-text-60 transition-colors shrink-0"
+                  className="text-[10px] font-mono px-2 py-0.5 rounded transition-colors shrink-0"
+                  style={{
+                    background: 'rgba(255,255,255,0.06)',
+                    color: 'rgba(255,255,255,0.4)',
+                  }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = 'rgba(255,255,255,0.8)'; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'rgba(255,255,255,0.4)'; }}
                 >
-                  restaurar
+                  Restaurar
                 </button>
                 <button
                   onClick={() => onRemove(item.id)}
+                  title="Eliminar permanentemente"
                   className="text-[10px] text-text-20 hover:text-score-red transition-colors shrink-0"
                 >
                   ✕
