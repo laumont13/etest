@@ -2,12 +2,15 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import MarginGate, { type MarginValues } from '@/components/MarginGate';
-import ResultCard, { type RankInfo } from '@/components/ResultCard';
+import type { RankInfo } from '@/components/ResultCard';
+import ProductDecisionResult from '@/components/ProductDecisionResult';
+import ProductWarRoom, { type MarginInputs } from '@/components/ProductWarRoom';
 import AnalysisLoading from '@/components/AnalysisLoading';
 import ExportPdfButton from '@/components/ExportPdfButton';
 import HistoryPanel from '@/components/HistoryPanel';
 import BattleView from '@/components/BattleView';
-import LaunchBoardView, { type LaunchBoardData } from '@/components/LaunchBoardView';
+import LaunchBoardView, { type LaunchBoardData, type BattleContext } from '@/components/LaunchBoardView';
+import BattleSelector from '@/components/BattleSelector';
 import { COUNTRY_LIST } from '@/lib/countries';
 import { evaluateMargin } from '@/lib/scoring';
 import {
@@ -28,10 +31,28 @@ type Phase =
   | 'loading'
   | 'result'
   | 'gate-failed'
+  | 'battle-select'
   | 'battle-loading'
   | 'battle-result'
+  | 'board'
   | 'pre-sample-loading'
   | 'pre-sample';
+
+function getProductId(title: string, country: string): string {
+  const slug = title
+    .toLowerCase()
+    .trim()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/\s+/g, '_')
+    .slice(0, 40);
+  return `${country}_${slug}`;
+}
+
+function getBoardDataKey(title: string, country: string): string {
+  return `etest_board_data_${getProductId(title, country)}`;
+}
 
 function getSessionId(): string {
   if (typeof window === 'undefined') return 'server';
@@ -69,24 +90,21 @@ export default function Home() {
   // History state
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [viewingItem, setViewingItem] = useState<HistoryItem | null>(null);
-  const [selectedForBattle, setSelectedForBattle] = useState<string[]>([]);
   const [battleA, setBattleA] = useState<HistoryItem | null>(null);
   const [battleB, setBattleB] = useState<HistoryItem | null>(null);
   const [battleResult, setBattleResult] = useState<BattleResult | null>(null);
+  const [battleError, setBattleError] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [lastAddedId, setLastAddedId] = useState<string | null>(null);
   const [preSampleData, setPreSampleData] = useState<LaunchBoardData | null>(null);
   const [preSampleError, setPreSampleError] = useState<string | null>(null);
-
-  const BOARD_DATA_KEY = 'etest_board_data';
+  const [battleContext, setBattleContext] = useState<BattleContext | null>(null);
+  const [boardReturnPhase, setBoardReturnPhase] = useState<Phase>('result');
+  const [analysisMarginInputs, setAnalysisMarginInputs] = useState<MarginInputs | undefined>(undefined);
 
   useEffect(() => {
     setSessionId(getSessionId());
     setHistory(loadHistory());
-    try {
-      const saved = localStorage.getItem(BOARD_DATA_KEY);
-      if (saved) setPreSampleData(JSON.parse(saved));
-    } catch {}
   }, []);
 
   const gate = evaluateMargin({
@@ -181,6 +199,19 @@ export default function Home() {
       const newItem = updated[0]; // always the most recently added
       setLastAddedId(newItem.id);
       setHistory(updated);
+      // Capture the margin inputs used for this analysis (for the simulator)
+      setAnalysisMarginInputs({
+        unitCost:   parseFloat(margin.unitCost)    || 0,
+        importacion: parseFloat(margin.shippingCost) || 0,
+        fees:       parseFloat(margin.fees)        || 0,
+        sellPrice:  parseFloat(margin.sellPrice)   || 0,
+      });
+      // Load board data for this specific product
+      try {
+        const boardKey = getBoardDataKey(data.product.title, data.product.country);
+        const saved = localStorage.getItem(boardKey);
+        setPreSampleData(saved ? JSON.parse(saved) : null);
+      } catch { setPreSampleData(null); }
       setPhase('result');
     } catch {
       setError('No se pudo conectar. Reintentá.');
@@ -194,12 +225,23 @@ export default function Home() {
     setError(null);
     setViewingItem(null);
     setLastAddedId(null);
+    setPreSampleData(null);
+    setBattleContext(null);
+    setAnalysisMarginInputs(undefined);
   };
 
   const handleViewItem = (item: HistoryItem) => {
     setViewingItem(item);
     setResult(null);
     setLastAddedId(null);
+    setBattleContext(null);
+    setAnalysisMarginInputs(undefined); // history items don't have original inputs
+    // Load board for this specific product
+    try {
+      const boardKey = getBoardDataKey(item.data.product.title, item.data.product.country);
+      const saved = localStorage.getItem(boardKey);
+      setPreSampleData(saved ? JSON.parse(saved) : null);
+    } catch { setPreSampleData(null); }
     setPhase('result');
     setHistoryOpen(false);
   };
@@ -212,25 +254,12 @@ export default function Home() {
     setHistory(removeItem(id));
   };
 
-  const handleToggleBattle = (id: string) => {
-    setSelectedForBattle(prev => {
-      if (prev.includes(id)) return prev.filter(x => x !== id);
-      if (prev.length >= 2) return [prev[1], id];
-      return [...prev, id];
-    });
-  };
-
-  const handleStartBattle = async () => {
-    if (selectedForBattle.length < 2) return;
-    const a = history.find(h => h.id === selectedForBattle[0]);
-    const b = history.find(h => h.id === selectedForBattle[1]);
-    if (!a || !b) return;
-
+  const handleStartBattle = async (a: HistoryItem, b: HistoryItem) => {
     setBattleA(a);
     setBattleB(b);
     setBattleResult(null);
+    setBattleError(null);
     setPhase('battle-loading');
-    setHistoryOpen(false);
 
     try {
       const res = await fetch('/api/battle', {
@@ -243,54 +272,96 @@ export default function Home() {
       setBattleResult(data);
       setPhase('battle-result');
     } catch {
-      setError('Error en la comparación IA. Reintentá.');
-      setPhase('input');
+      setBattleError('Error en la comparación IA. Reintentá.');
+      setPhase('battle-result');
     }
   };
 
-  const openPreSample = async () => {
-    if (!displayData) return;
+  // Generate and open the Launch Command for the battle winner
+  const openLaunchCommand = useCallback(async () => {
+    if (!battleResult || !battleA || !battleB) return;
+    if (battleResult.winner === 'tie') return;
+    const winnerItem = battleResult.winner === 'A' ? battleA : battleB;
+    const loserItem  = battleResult.winner === 'A' ? battleB : battleA;
+
+    setBoardReturnPhase('battle-result');
+    setViewingItem(winnerItem);
     setPreSampleError(null);
     setPhase('pre-sample-loading');
+
+    const battleCtx = {
+      opponent: loserItem.data?.product?.title ?? 'producto rival',
+      whyWon: battleResult.summary ?? '',
+      keyDifference: battleResult.keyDifference ?? '',
+      recommendation: battleResult.recommendation ?? '',
+      confidence: battleResult.winnerConfidence,
+    };
+
+    // Check if we already have a saved Launch Command for this winner
+    const boardKey = getBoardDataKey(winnerItem.data.product.title, winnerItem.data.product.country);
+    try {
+      const cached = localStorage.getItem(boardKey);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        // Only use cache if it has the new Launch Command structure (has strategicDecision)
+        if (parsed?.strategicDecision) {
+          setPreSampleData(parsed);
+          setPhase('pre-sample');
+          return;
+        }
+      }
+    } catch {}
+
+    // Generate fresh Launch Command
     try {
       const res = await fetch('/api/pre-sample-studio', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(displayData),
+        body: JSON.stringify({ winnerData: winnerItem.data, battleContext: battleCtx }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? 'Error');
       setPreSampleData(data);
-      try { localStorage.setItem('etest_board_data', JSON.stringify(data)); } catch {}
+      try { localStorage.setItem(boardKey, JSON.stringify(data)); } catch {}
       setPhase('pre-sample');
     } catch {
-      setPreSampleError('No se pudo generar el Pre-Sample Studio. Reintentá.');
-      setPhase('result');
+      setPreSampleError('No se pudo generar el Launch Command. Reintentá.');
+      setPhase('battle-result');
     }
+  }, [battleResult, battleA, battleB]);
+
+
+  const handleNewBattle = () => {
+    setBattleError(null);
+    setPhase('battle-select');
   };
 
   const handleClearHistory = () => {
     clearHistory();
     setHistory([]);
-    setSelectedForBattle([]);
     setLastAddedId(null);
   };
 
   const displayData = viewingItem ? viewingItem.data : result;
 
-  // Command center sidebar: always visible when there's history (except during initial analysis loading)
-  const showSidebar = hasHistory && phase !== 'loading' && phase !== 'pre-sample-loading' && phase !== 'pre-sample';
+  // Sidebar visible only during input + result; hidden during all immersive phases
+  const showSidebar =
+    hasHistory &&
+    phase !== 'loading' &&
+    phase !== 'battle-select' &&
+    phase !== 'battle-loading' &&
+    phase !== 'battle-result' &&
+    phase !== 'pre-sample-loading' &&
+    phase !== 'pre-sample' &&
+    phase !== 'board';
 
   const historyPanel = (
     <HistoryPanel
       history={history}
-      selectedForBattle={selectedForBattle}
       newLeaderId={newLeaderId}
       onView={handleViewItem}
       onStatusChange={handleStatusChange}
       onRemove={handleRemove}
-      onToggleBattle={handleToggleBattle}
-      onStartBattle={handleStartBattle}
       onClear={handleClearHistory}
     />
   );
@@ -318,19 +389,6 @@ export default function Home() {
                 </div>
                 <div className="flex items-center gap-2">
                   {/* Board button — always accessible when data exists */}
-                  {preSampleData && phase !== 'pre-sample' && (
-                    <button
-                      onClick={() => setPhase('pre-sample')}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-mono transition-colors"
-                      style={{
-                        borderColor: 'rgba(184,255,92,0.35)',
-                        color: '#B8FF5C',
-                        background: 'rgba(184,255,92,0.06)',
-                      }}
-                    >
-                      ✦ Mi Board
-                    </button>
-                  )}
                   {/* Mobile command center toggle */}
                   {hasHistory && (
                     <button
@@ -464,9 +522,9 @@ export default function Home() {
             {/* Loading */}
             {phase === 'loading' && <AnalysisLoading />}
 
-            {/* Result */}
+            {/* Result — compact decision card */}
             {phase === 'result' && displayData && (
-              <div className="space-y-6">
+              <div className="space-y-4">
                 {viewingItem && (
                   <div className="flex items-center gap-2">
                     <button
@@ -476,41 +534,17 @@ export default function Home() {
                       ← Nuevo análisis
                     </button>
                     <span className="text-text-20">·</span>
-                    <span className="text-xs font-mono text-text-30">
-                      Desde historial
-                    </span>
+                    <span className="text-xs font-mono text-text-30">Desde historial</span>
                   </div>
                 )}
-                <ResultCard
+                <ProductDecisionResult
                   data={displayData}
                   rankInfo={rankInfo}
-                  onBattle={() => setHistoryOpen(true)}
+                  historyCount={history.filter(h => h.status !== 'discarded').length}
+                  onBattle={() => setPhase('battle-select')}
+                  onReset={reset}
                 />
-                {preSampleError && (
-                  <div className="rounded-lg border border-score-red/30 bg-score-red/10 px-4 py-3 text-sm text-score-red">
-                    {preSampleError}
-                  </div>
-                )}
-                <button
-                  onClick={preSampleData ? () => setPhase('pre-sample') : openPreSample}
-                  className="w-full py-3.5 rounded-xl border text-sm font-medium transition-all"
-                  style={{
-                    background: 'rgba(184,255,92,0.06)',
-                    borderColor: 'rgba(184,255,92,0.25)',
-                    color: '#B8FF5C',
-                  }}
-                >
-                  {preSampleData ? '✦ Abrir mi Launch Board' : '✦ Crear Launch Board'}
-                </button>
-                <div className="flex gap-3 flex-wrap">
-                  <ExportPdfButton data={displayData} />
-                  <button
-                    onClick={reset}
-                    className="flex-1 py-3 rounded-xl bg-bg-2 border border-border-mid text-text-80 hover:text-text-100 hover:border-accent/40 transition-colors"
-                  >
-                    Validar otro producto
-                  </button>
-                </div>
+                <ExportPdfButton data={displayData} />
               </div>
             )}
 
@@ -518,30 +552,60 @@ export default function Home() {
             {phase === 'pre-sample-loading' && (
               <div className="animate-fade-up flex flex-col items-center justify-center py-20 gap-4">
                 <div className="w-2 h-2 rounded-full bg-accent animate-pulse" />
-                <p className="text-text-60 text-sm">Generando Launch Board…</p>
-                <p className="text-text-30 text-xs max-w-xs text-center">Creando ángulos, creativos, prompts de imagen y shot list. Puede tomar hasta 30 segundos.</p>
+                <p className="text-text-60 text-sm">Generando Launch Command…</p>
+                <p className="text-text-30 text-xs max-w-xs text-center">Analizando el ganador y construyendo el plan de lanzamiento completo. Puede tomar hasta 45 segundos.</p>
               </div>
             )}
 
-            {/* Launch Board */}
+            {/* Launch Command */}
             {phase === 'pre-sample' && preSampleData && (
               <LaunchBoardView
                 data={preSampleData}
-                onBack={() => setPhase('result')}
+                onBack={() => { setBattleContext(null); setPhase(boardReturnPhase); }}
               />
             )}
 
-            {/* Battle */}
+            {/* Analytical board (ProductWarRoom) — accessible but not a primary entry point */}
+            {phase === 'board' && displayData && (
+              <ProductWarRoom
+                data={displayData}
+                productId={getProductId(displayData.product.title, displayData.product.country)}
+                marginInputs={analysisMarginInputs}
+                battleContext={battleContext}
+                hasLaunchBoardData={!!preSampleData}
+                onCreateLaunchBoard={() => {}}
+                onBack={() => { setBattleContext(null); setPhase(boardReturnPhase); }}
+              />
+            )}
+
+            {/* Battle selector — separate screen for choosing 2 products */}
+            {phase === 'battle-select' && (
+              <BattleSelector
+                history={history}
+                onStart={handleStartBattle}
+                onCancel={() => setPhase(displayData ? 'result' : 'input')}
+              />
+            )}
+
+            {/* Battle loading / result */}
             {(phase === 'battle-loading' || phase === 'battle-result') && battleA && battleB && (
               <BattleView
                 itemA={battleA}
                 itemB={battleB}
                 result={battleResult}
                 loading={phase === 'battle-loading'}
+                battleError={battleError}
                 onBack={() => {
-                  setPhase('input');
-                  setSelectedForBattle([]);
+                  setBattleError(null);
+                  setPhase(displayData ? 'result' : 'input');
                 }}
+                onNewBattle={handleNewBattle}
+                onShowRanking={() => {
+                  setBattleError(null);
+                  setPhase(displayData ? 'result' : 'input');
+                  setHistoryOpen(true);
+                }}
+                onOpenLaunchCommand={phase === 'battle-result' && battleResult?.winner !== 'tie' ? openLaunchCommand : undefined}
               />
             )}
 

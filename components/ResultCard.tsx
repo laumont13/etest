@@ -11,7 +11,7 @@ interface SourceInfo {
   queriesTried?: string[];
 }
 
-interface AnalysisPayload {
+export interface AnalysisPayload {
   product: { title: string; category: string | null; searchTerm?: string; sourceUrl: string | null; country: string };
   margin: { multiple: number; totalCost: number; grossProfit: number; marginPct: number };
   signals: {

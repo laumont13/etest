@@ -5,13 +5,10 @@ import { getRanked, itemScore } from '@/lib/history';
 
 interface Props {
   history: HistoryItem[];
-  selectedForBattle: string[];
   newLeaderId?: string | null;
   onView: (item: HistoryItem) => void;
   onStatusChange: (id: string, status: HistoryStatus) => void;
   onRemove: (id: string) => void;
-  onToggleBattle: (id: string) => void;
-  onStartBattle: () => void;
   onClear: () => void;
 }
 
@@ -38,82 +35,17 @@ function timeAgo(iso: string): string {
   return `${Math.floor(h / 24)}d`;
 }
 
-function SlotCard({
-  slot,
-  item,
-  onClear,
-}: {
-  slot: 'A' | 'B';
-  item: HistoryItem | undefined;
-  onClear: () => void;
-}) {
-  const score = item ? itemScore(item) : null;
-  const verdict = item?.data?.result?.verdict ?? 'kill';
-  const color = item ? (VERDICT_COLORS[verdict] ?? '#FACC15') : undefined;
-
-  if (!item) {
-    return (
-      <div
-        className="rounded-xl border-2 border-dashed p-3 flex flex-col gap-1 min-h-[72px] justify-center items-center"
-        style={{ borderColor: 'rgba(184,255,92,0.15)' }}
-      >
-        <div className="text-[10px] font-mono text-text-30 uppercase tracking-[0.12em]">Prod. {slot}</div>
-        <div className="text-[10px] text-text-20">Elegir del ranking ↓</div>
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className="rounded-xl border p-3 flex flex-col gap-1.5 relative min-h-[72px]"
-      style={{ borderColor: `${color}40`, background: `${color}08` }}
-    >
-      <div className="flex items-center justify-between gap-1">
-        <div className="text-[10px] font-mono uppercase tracking-[0.12em]" style={{ color }}>Prod. {slot}</div>
-        <button
-          onClick={onClear}
-          className="text-[10px] text-text-20 hover:text-text-60 transition-colors shrink-0"
-        >
-          ✕
-        </button>
-      </div>
-      <div className="text-xs text-text-80 leading-snug line-clamp-2 flex-1">
-        {item.data?.product?.title ?? 'Sin título'}
-      </div>
-      <div className="flex items-center gap-1.5">
-        <span className="font-display text-lg tabular-nums leading-none" style={{ color }}>{score}</span>
-        <span className="text-[10px] font-mono text-text-30">
-          · {item.data?.margin?.multiple}x
-        </span>
-      </div>
-    </div>
-  );
-}
 
 export default function HistoryPanel({
   history,
-  selectedForBattle,
   newLeaderId,
   onView,
   onStatusChange,
   onRemove,
-  onToggleBattle,
-  onStartBattle,
   onClear,
 }: Props) {
   const ranked = getRanked(history);
   const discarded = history.filter(h => h.status === 'discarded');
-  const battleReady = selectedForBattle.length === 2;
-  const canBattle = ranked.length >= 2;
-
-  const slotA = history.find(h => h.id === selectedForBattle[0]);
-  const slotB = history.find(h => h.id === selectedForBattle[1]);
-
-  const slotAScore = slotA ? itemScore(slotA) : null;
-  const slotBScore = slotB ? itemScore(slotB) : null;
-  const slotADemand = slotA?.data?.signals?.trendsInterest ?? null;
-  const slotBDemand = slotB?.data?.signals?.trendsInterest ?? null;
-
   const leaderScore = ranked.length > 0 ? itemScore(ranked[0]) : null;
 
   if (history.length === 0) return null;
@@ -121,104 +53,7 @@ export default function HistoryPanel({
   return (
     <div className="flex flex-col gap-4">
 
-      {/* ── Battle zone ── */}
-      {canBattle ? (
-        <div
-          className="rounded-2xl border p-4 space-y-3"
-          style={{ borderColor: 'rgba(184,255,92,0.2)', background: 'rgba(184,255,92,0.04)' }}
-        >
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-sm font-mono font-medium" style={{ color: '#B8FF5C' }}>⚔ Modo Batalla</span>
-              <span
-                className="text-[9px] font-mono px-1.5 py-0.5 rounded uppercase tracking-[0.1em]"
-                style={{ background: 'rgba(184,255,92,0.15)', color: '#B8FF5C' }}
-              >
-                Premium
-              </span>
-            </div>
-            <p className="text-[11px] text-text-40 leading-relaxed">
-              Compará cuál tiene más chances reales antes de invertir.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <SlotCard slot="A" item={slotA} onClear={() => slotA && onToggleBattle(slotA.id)} />
-            <SlotCard slot="B" item={slotB} onClear={() => slotB && onToggleBattle(slotB.id)} />
-          </div>
-
-          {battleReady && slotAScore !== null && slotBScore !== null && (
-            <div className="grid grid-cols-3 gap-2 text-center py-1">
-              {[
-                {
-                  label: 'Score',
-                  a: String(slotAScore),
-                  b: String(slotBScore),
-                  aWin: slotAScore > slotBScore,
-                  bWin: slotBScore > slotAScore,
-                },
-                {
-                  label: 'Margen',
-                  a: slotA?.data?.margin?.multiple ? `${slotA.data.margin.multiple}x` : '–',
-                  b: slotB?.data?.margin?.multiple ? `${slotB.data.margin.multiple}x` : '–',
-                  aWin: (slotA?.data?.margin?.multiple ?? 0) > (slotB?.data?.margin?.multiple ?? 0),
-                  bWin: (slotB?.data?.margin?.multiple ?? 0) > (slotA?.data?.margin?.multiple ?? 0),
-                },
-                {
-                  label: 'Demanda',
-                  a: slotADemand != null ? `${slotADemand}` : '–',
-                  b: slotBDemand != null ? `${slotBDemand}` : '–',
-                  aWin: (slotADemand ?? -1) > (slotBDemand ?? -1),
-                  bWin: (slotBDemand ?? -1) > (slotADemand ?? -1),
-                },
-              ].map(({ label, a, b, aWin, bWin }) => (
-                <div key={label}>
-                  <div className="text-[9px] font-mono text-text-30 uppercase tracking-[0.1em] mb-1">{label}</div>
-                  <div className="flex justify-center items-center gap-1">
-                    <span
-                      className="text-xs font-mono tabular-nums"
-                      style={{ color: aWin ? '#B8FF5C' : 'rgba(255,255,255,0.4)' }}
-                    >{a}</span>
-                    <span className="text-text-20 text-[9px]">·</span>
-                    <span
-                      className="text-xs font-mono tabular-nums"
-                      style={{ color: bWin ? '#B8FF5C' : 'rgba(255,255,255,0.4)' }}
-                    >{b}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <button
-            onClick={onStartBattle}
-            disabled={!battleReady}
-            className="w-full py-3 rounded-xl text-sm font-semibold transition-all"
-            style={{
-              background: battleReady ? 'rgba(184,255,92,0.15)' : 'rgba(255,255,255,0.04)',
-              border: battleReady ? '1px solid rgba(184,255,92,0.4)' : '1px solid rgba(255,255,255,0.06)',
-              color: battleReady ? '#B8FF5C' : 'rgba(255,255,255,0.2)',
-              cursor: battleReady ? 'pointer' : 'not-allowed',
-            }}
-          >
-            {battleReady
-              ? '⚔ Iniciar Batalla →'
-              : `Seleccioná 2 del ranking (${selectedForBattle.length}/2)`}
-          </button>
-        </div>
-      ) : ranked.length === 1 ? (
-        <div
-          className="rounded-xl border border-dashed p-3 text-center"
-          style={{ borderColor: 'rgba(184,255,92,0.12)' }}
-        >
-          <div className="text-[11px] text-text-30 leading-relaxed">
-            ⚔ Analizá otro producto<br />
-            <span style={{ color: 'rgba(184,255,92,0.5)' }}>y podrás enfrentarlos en batalla</span>
-          </div>
-        </div>
-      ) : null}
-
-      {/* ── Ranking / Command Center ── */}
+      {/* ── Ranking ── */}
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -244,13 +79,9 @@ export default function HistoryPanel({
             const verdict = item.data?.result?.verdict ?? 'kill';
             const color = VERDICT_COLORS[verdict] ?? '#F87171';
             const isFav = item.status === 'favorite';
-            const isSelected = selectedForBattle.includes(item.id);
             const isLeader = idx === 0;
             const isNewLeader = item.id === newLeaderId && isLeader;
             const title = item.data?.product?.title ?? 'Sin título';
-            const slotLabel = isSelected
-              ? selectedForBattle.indexOf(item.id) === 0 ? 'A' : 'B'
-              : null;
             const badge = rankBadge(idx);
             const delta = leaderScore !== null && idx > 0 ? score - leaderScore : null;
 
@@ -259,28 +90,17 @@ export default function HistoryPanel({
                 key={item.id}
                 className="group relative rounded-xl border transition-all"
                 style={{
-                  borderColor: isSelected
-                    ? 'rgba(184,255,92,0.35)'
-                    : isLeader
-                    ? 'rgba(184,255,92,0.2)'
-                    : 'rgba(255,255,255,0.06)',
-                  background: isSelected
-                    ? 'rgba(184,255,92,0.04)'
-                    : isLeader
-                    ? 'rgba(184,255,92,0.03)'
-                    : 'rgba(255,255,255,0.02)',
+                  borderColor: isLeader ? 'rgba(184,255,92,0.2)' : 'rgba(255,255,255,0.06)',
+                  background: isLeader ? 'rgba(184,255,92,0.03)' : 'rgba(255,255,255,0.02)',
                 }}
               >
                 <div className="flex items-center gap-2.5 p-2.5">
                   {/* Rank badge */}
                   <div
                     className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-mono font-medium"
-                    style={{
-                      background: isSelected ? 'rgba(184,255,92,0.2)' : badge.bg,
-                      color: isSelected ? '#B8FF5C' : badge.color,
-                    }}
+                    style={{ background: badge.bg, color: badge.color }}
                   >
-                    {slotLabel ?? (idx + 1)}
+                    {idx + 1}
                   </div>
 
                   {/* Title + meta */}
@@ -327,17 +147,6 @@ export default function HistoryPanel({
                   {/* Actions */}
                   <div className="flex items-center gap-1 shrink-0">
                     <button
-                      onClick={() => onToggleBattle(item.id)}
-                      title={isSelected ? 'Quitar de batalla' : 'Agregar a batalla'}
-                      className="w-6 h-6 rounded flex items-center justify-center text-[11px] transition-colors"
-                      style={{
-                        background: isSelected ? 'rgba(184,255,92,0.18)' : 'transparent',
-                        color: isSelected ? '#B8FF5C' : 'rgba(255,255,255,0.24)',
-                      }}
-                    >
-                      ⚔
-                    </button>
-                    <button
                       onClick={() => onStatusChange(item.id, isFav ? 'active' : 'favorite')}
                       title={isFav ? 'Quitar favorito' : 'Favorito'}
                       className="w-6 h-6 rounded flex items-center justify-center text-[11px] transition-colors hover:text-text-80"
@@ -347,7 +156,7 @@ export default function HistoryPanel({
                     </button>
                     <button
                       onClick={() => onStatusChange(item.id, 'discarded')}
-                      title="Ocultar del ranking (podés restaurarlo después)"
+                      title="Ocultar del ranking"
                       className="w-6 h-6 rounded flex items-center justify-center text-[11px] transition-colors hover:text-score-red"
                       style={{ color: 'rgba(255,255,255,0.16)' }}
                     >

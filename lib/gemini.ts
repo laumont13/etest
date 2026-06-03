@@ -299,6 +299,10 @@ export interface BattleResult {
   bStrengths: string[];
   aWeaknesses: string[];
   bWeaknesses: string[];
+  /** Present only when a deterministic test fallback was used instead of real AI */
+  testMode?: boolean;
+  fallback?: boolean;
+  fallbackReason?: string;
 }
 
 const BATTLE_DIMS = [

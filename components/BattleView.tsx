@@ -9,7 +9,11 @@ interface Props {
   itemB: HistoryItem;
   result: BattleResult | null;
   loading: boolean;
+  battleError?: string | null;
   onBack: () => void;
+  onNewBattle?: () => void;
+  onShowRanking?: () => void;
+  onOpenLaunchCommand?: () => void;
 }
 
 const VERDICT_COLORS: Record<string, string> = {
@@ -178,7 +182,7 @@ function StrengthBox({ title, strengths, weaknesses, color, label }: {
   );
 }
 
-export default function BattleView({ itemA, itemB, result, loading, onBack }: Props) {
+export default function BattleView({ itemA, itemB, result, loading, battleError, onBack, onNewBattle, onShowRanking, onOpenLaunchCommand }: Props) {
   const aScore = itemScore(itemA);
   const bScore = itemScore(itemB);
   const aVerdict = itemA.data?.result?.verdict ?? 'kill';
@@ -258,6 +262,33 @@ export default function BattleView({ itemA, itemB, result, loading, onBack }: Pr
         />
       </div>
 
+      {/* Error state */}
+      {battleError && !loading && (
+        <div
+          className="rounded-2xl border p-5 space-y-3 text-center"
+          style={{ borderColor: 'rgba(248,113,113,0.3)', background: 'rgba(248,113,113,0.06)' }}
+        >
+          <div className="text-sm text-text-80">{battleError}</div>
+          <div className="flex gap-2 justify-center flex-wrap">
+            <button
+              onClick={onBack}
+              className="px-4 py-2 rounded-xl text-sm border border-border-mid bg-bg-2 text-text-80 hover:text-text-100 transition-colors"
+            >
+              ← Volver al War Room
+            </button>
+            {onNewBattle && (
+              <button
+                onClick={onNewBattle}
+                className="px-4 py-2 rounded-xl text-sm border transition-colors"
+                style={{ borderColor: 'rgba(184,255,92,0.3)', color: '#B8FF5C', background: 'rgba(184,255,92,0.06)' }}
+              >
+                Nueva batalla
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Loading */}
       {loading && (
         <div className="rounded-2xl border border-border-soft bg-bg-1/80 p-5 sm:p-6 text-center space-y-3">
@@ -293,6 +324,26 @@ export default function BattleView({ itemA, itemB, result, loading, onBack }: Pr
       {/* Result */}
       {result && !loading && (
         <>
+          {/* Test mode banner */}
+          {result.testMode && (
+            <div
+              className="rounded-xl border px-4 py-3 flex items-start gap-3"
+              style={{ borderColor: 'rgba(251,191,36,0.35)', background: 'rgba(251,191,36,0.06)' }}
+            >
+              <div className="shrink-0 mt-0.5">
+                <span
+                  className="text-[10px] font-mono uppercase tracking-[0.12em] rounded-full px-2 py-0.5"
+                  style={{ background: 'rgba(251,191,36,0.2)', color: '#FBBF24' }}
+                >
+                  Modo test · sin IA
+                </span>
+              </div>
+              <p className="text-xs text-text-40 leading-relaxed">
+                {result.fallbackReason ?? 'IA no disponible'}. Resultado generado solo para probar el flujo. No usar como decisión real de inversión.
+              </p>
+            </div>
+          )}
+
           {/* Winner announcement */}
           {winner !== 'tie' ? (
             <div
@@ -330,6 +381,17 @@ export default function BattleView({ itemA, itemB, result, loading, onBack }: Pr
               <div className="font-display text-5xl text-score-yellow mb-2">Empate</div>
               <p className="text-sm text-text-60">Scores muy similares — decidí por margen o menor riesgo logístico.</p>
             </div>
+          )}
+
+          {/* Launch Command CTA inline with winner announcement */}
+          {winner !== 'tie' && onOpenLaunchCommand && (
+            <button
+              onClick={onOpenLaunchCommand}
+              className="w-full py-3.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
+              style={{ background: '#B8FF5C', color: '#0A0A0B' }}
+            >
+              ✦ Crear Launch Command para el ganador
+            </button>
           )}
 
           {/* Category winners */}
@@ -438,6 +500,33 @@ export default function BattleView({ itemA, itemB, result, loading, onBack }: Pr
               />
             </div>
           )}
+
+          {/* Action bar */}
+          <div className="flex gap-2 flex-wrap">
+            {onShowRanking && (
+              <button
+                onClick={onShowRanking}
+                className="flex-1 py-3 rounded-xl text-sm border transition-all hover:opacity-90"
+                style={{ borderColor: 'rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.6)' }}
+              >
+                Ver Ranking
+              </button>
+            )}
+            {onNewBattle && (
+              <button
+                onClick={onNewBattle}
+                className="flex-1 py-3 rounded-xl text-sm border border-border-mid bg-bg-2 text-text-60 hover:text-text-100 transition-colors"
+              >
+                Nueva batalla
+              </button>
+            )}
+            <button
+              onClick={onBack}
+              className="px-4 py-3 rounded-xl text-sm text-text-40 hover:text-text-80 transition-colors"
+            >
+              ← Volver
+            </button>
+          </div>
         </>
       )}
     </div>

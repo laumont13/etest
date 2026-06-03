@@ -96,12 +96,12 @@ export default function MarginGate({ values, onChange }: Props) {
               <span className="text-text-60">USD 7</span>
             </div>
             <div className="flex gap-2">
-              <span className="text-text-30 w-32 shrink-0">Transp. e imp.</span>
+              <span className="text-text-30 w-32 shrink-0">Importación</span>
               <span className="text-text-60">USD 5 (flete + aduana estimados)</span>
             </div>
             <div className="flex gap-2">
-              <span className="text-text-30 w-32 shrink-0">Comisiones</span>
-              <span className="text-text-60">USD 3 (15% de $35 aprox.)</span>
+              <span className="text-text-30 w-32 shrink-0">Fees y venta</span>
+              <span className="text-text-60">USD 8 (comisiones + envío + ads)</span>
             </div>
             <div className="flex gap-2">
               <span className="text-text-30 w-32 shrink-0">Precio de venta</span>
@@ -119,25 +119,25 @@ export default function MarginGate({ values, onChange }: Props) {
           'unitCost',
           'Costo del producto',
           'Ej: 7',
-          'Lo que te cobra el proveedor por cada unidad (en USD).',
+          'Costo unitario del producto antes de importación, impuestos y fees.',
         )}
         {field(
           'shippingCost',
-          'Transporte e impuestos',
+          'Importación',
           'Ej: 5',
-          'Flete, courier, aduana, IVA, aranceles. Estimá si no sabés exacto.',
+          'Estimá por unidad todo lo relacionado a importar: flete, courier, aduana, impuestos, aranceles y gestión.',
         )}
         {field(
           'fees',
-          'Comisiones de venta',
-          'Ej: 3',
-          'En USD. ML, Shopify, pasarela, envío gratis. Ej: 15% de $35 = $5.',
+          'Fees y venta',
+          'Ej: 8',
+          'Comisiones, pasarela, packaging, envío, fulfillment, devoluciones y ads estimados por unidad.',
         )}
         {field(
           'sellPrice',
           'Precio de venta',
           'Ej: 45',
-          'Precio final al que creés que podés vender al cliente.',
+          'Precio final al que creés que podés vender el producto.',
         )}
       </div>
 

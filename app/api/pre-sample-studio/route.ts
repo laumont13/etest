@@ -19,574 +19,268 @@ function getLocale(c: string) {
   return LOCALE[c] ?? { language: 'Español neutro internacional', currency: 'USD', tone: 'Claro, práctico y directo' };
 }
 
-// ─── Format analysis for prompt ─────────────────────────────────────────────
-function formatAnalysis(data: any): string {
-  const a = data.analysis ?? {};
-  const r = data.result ?? {};
-  const s = data.signals ?? {};
-  const lines = [
-    `Producto: ${data.product?.title ?? ''}`,
-    `País/mercado: ${data.product?.country ?? ''}`,
-    `Score: ${r.adjustedScore ?? r.score ?? 0}/100`,
-    `Veredicto: ${r.verdict ?? 'kill'}`,
+// ─── Format winner + battle context for prompt ───────────────────────────────
+function formatWinnerContext(winnerData: any, battleCtx: any): string {
+  const a = winnerData.analysis ?? {};
+  const r = winnerData.result ?? {};
+  const s = winnerData.signals ?? {};
+  const m = winnerData.margin ?? {};
+  return [
+    `PRODUCTO GANADOR: "${winnerData.product?.title ?? ''}"`,
+    `País: ${winnerData.product?.country ?? ''}`,
+    `Score: ${r.adjustedScore ?? r.score ?? 0}/100  Veredicto: ${(r.verdict ?? '').toUpperCase()}`,
+    `Margen: ${m.multiple ?? 0}x  Ganancia bruta: $${m.grossProfit ?? 0}  Margen %: ${Math.round((m.marginPct ?? 0) * 100)}%`,
+    `Costo total: $${m.totalCost ?? 0}`,
     `Razón del veredicto: ${r.reason ?? ''}`,
-    `Margen múltiplo: ${data.margin?.multiple ?? 0}x`,
-    `Posicionamiento sugerido: ${a.positioning ?? ''}`,
-    `Riesgos clave: ${(a.keyRisks ?? []).join('; ')}`,
-    `Ángulos de venta: ${(a.angles ?? []).map((x: any) => x.hook).filter(Boolean).join('; ')}`,
-    `Competidores en ML: ${s.mlCompetitors ?? s.googleMLEstimate ?? 'N/D'}`,
+    `Posicionamiento: ${a.positioning ?? ''}`,
+    `Riesgos clave: ${(a.keyRisks ?? []).join(' | ')}`,
+    `Ángulos de venta identificados: ${(a.angles ?? []).map((x: any) => `"${x.hook}" (${x.trigger})`).join(' | ')}`,
+    `Google Trends: ${s.trendsInterest ?? 'N/D'}/100 (${s.trendDirection ?? ''})`,
+    `Competidores ML: ${s.mlCompetitors ?? s.googleMLEstimate ?? 'N/D'}`,
     `Rango precios ML: ${s.mlPriceRange ? `${s.mlPriceRange[0]}–${s.mlPriceRange[1]}` : 'N/D'}`,
-    `Google Trends: ${s.trendsInterest ?? 'N/D'}/100`,
     `Proveedor precio USD: ${s.supplierPriceRangeUSD ? `$${s.supplierPriceRangeUSD[0]}–$${s.supplierPriceRangeUSD[1]}` : 'N/D'}`,
-    `MOQ proveedor: ${s.supplierMOQ ?? 'N/D'} ${s.supplierMOQUnit ?? ''}`,
-  ];
-  return lines.filter(l => !l.endsWith(': ') && !l.endsWith(': N/D') && !l.endsWith(': 0')).join('\n');
+    `MOQ: ${s.supplierMOQ ?? 'N/D'} ${s.supplierMOQUnit ?? ''}`,
+    '',
+    `CONTEXTO DE BATALLA:`,
+    `Venció a: "${battleCtx?.opponent ?? ''}"`,
+    `Por qué ganó: ${battleCtx?.whyWon ?? battleCtx?.reason ?? ''}`,
+    `Diferencia clave: ${battleCtx?.keyDifference ?? ''}`,
+    `Recomendación estratégica: ${battleCtx?.recommendation ?? ''}`,
+    `Confianza IA: ${battleCtx?.confidence ?? 75}%`,
+  ].filter(Boolean).join('\n');
 }
 
-// ─── Fallback generator (LaunchBoardData format) ────────────────────────────
-function buildFallback(data: any): any {
-  const country  = data.product?.country ?? 'AR';
-  const locale   = getLocale(country);
-  const title    = data.product?.title ?? 'Producto';
-  const score    = data.result?.adjustedScore ?? data.result?.score ?? 0;
-  const verdict  = data.result?.verdict ?? 'maybe';
-  const angles   = (data.analysis?.angles ?? []).map((a: any) => a.hook).filter(Boolean) as string[];
-  const risks    = (data.analysis?.keyRisks ?? []) as string[];
-  const pos      = data.analysis?.positioning ?? '';
-
-  const shortTitle = title.split(' ').slice(0, 3).join(' ');
-  const platform = ['AR','MX','CL','CO'].includes(country) ? 'Tiendanube' : country === 'BR' ? 'Nuvemshop' : country === 'US' ? 'Shopify' : 'Tiendanube';
-
-  // ── product panel ────────────────────────────────────────────────────────
-  const product = {
-    title,
-    score,
-    verdict,
-    mainOpportunity: pos ? pos.split('.')[0] : `${shortTitle} tiene demanda real con espacio para diferenciarse`,
-    mainRisk: risks[0] ?? 'Alta competencia en precio — diferenciación de marca es clave',
-    whyPursue: angles[0] ? `El ángulo "${angles[0]}" permite posicionar con claridad y testar rápido` : 'Buen múltiplo de margen y señal de demanda validada',
-    signalsSummary: data.signals?.trendsInterest ? `Trends ${data.signals.trendsInterest}/100 · ${data.signals.mlCompetitors ?? '?'} publicaciones ML` : undefined,
-  };
-
-  // ── brand territories ────────────────────────────────────────────────────
-  const brandTerritories = [
-    {
-      id: 'bt_01',
-      name: 'Premium Accesible',
-      commercialPositioning: `${shortTitle} posicionado como la opción de calidad real sin precio de lujo`,
-      perceivedValue: 'Producto serio, bien terminado, que vale lo que cuesta',
-      bestFor: 'Compradores que investigan antes de comprar y valoran calidad sobre precio mínimo',
-      whenToUse: 'Cuando el margen permite precio medio-alto y hay diferenciadores visuales claros',
-      whenNotToUse: 'Si el producto es idéntico a opciones más baratas — la promesa no sostendrá',
-      visualDirection: 'Fondos oscuros o blancos puros, tipografía sans-serif bold, fotografía profesional limpia',
-      storeUsage: 'Hero con headline de posicionamiento + beneficios concretos + garantía visible',
-      adUsage: 'Creativos de calidad percibida: close-up del producto, empaque, detalle de materiales',
-      packagingUsage: 'Caja o bolsa de color sólido con logo centrado, sin exceso de texto',
-      suggestedColors: ['#1A1A2E', '#FFFFFF', '#C9A96E'],
-      colorsToAvoid: ['#FF6B00', '#FFCC00'],
-      matchingWords: ['calidad', 'diseño', 'duradero', 'confiable', 'vale lo que cuesta'],
-    },
-    {
-      id: 'bt_02',
-      name: 'Funcional Directo',
-      commercialPositioning: `${shortTitle} posicionado como la solución práctica sin vueltas`,
-      perceivedValue: 'Eficiente, sin complicaciones, resuelve el problema en el primer uso',
-      bestFor: 'Compradores orientados a la utilidad, que no quieren aprender ni esperar resultados',
-      whenToUse: 'Cuando la propuesta es claramente funcional y el tiempo/esfuerzo es el pain principal',
-      whenNotToUse: 'Si el producto tiene componente aspiracional fuerte — esta marca se siente mundana',
-      visualDirection: 'Colores medios (azul, gris, verde), fotografía de uso real, infografías de pasos simples',
-      storeUsage: 'Destacar "cómo funciona" en 3 pasos, FAQs prominentes, precio y envío visibles arriba',
-      adUsage: 'Demos de uso, antes/después sin exagerar, comparación con alternativa común',
-      packagingUsage: 'Empaque funcional: instrucciones visibles, colores corporativos, sin frivolidades',
-      suggestedColors: ['#1E3A5F', '#F0F4F8', '#2ECC71'],
-      colorsToAvoid: ['#FF1493', '#800080'],
-      matchingWords: ['simple', 'efectivo', 'fácil de usar', 'sin complicaciones', 'resuelve'],
-    },
-    {
-      id: 'bt_03',
-      name: 'Estilo Personal',
-      commercialPositioning: `${shortTitle} como parte del estilo e identidad del comprador`,
-      perceivedValue: 'Dice algo de vos. No es solo un producto — es una elección',
-      bestFor: 'Compradores con identidad definida que cuidan la estética de lo que usan o regalan',
-      whenToUse: 'Cuando el producto es visible, personalizable o parte de una rutina con carga identitaria',
-      whenNotToUse: 'Para productos puramente utilitarios donde nadie pregunta qué usás',
-      visualDirection: 'Lifestyle auténtico, personas reales en entornos naturales, paleta cálida o vibrante',
-      storeUsage: 'Fotografía lifestyle dominante, testimonios con foto, comunidad y reseñas destacadas',
-      adUsage: 'UGC-style, reacciones genuinas, videos cortos de uso en entorno natural',
-      packagingUsage: 'Empaque con mensaje inspiracional, tarjeta personalizada, experiencia de unboxing cuidada',
-      suggestedColors: ['#F5CBA7', '#2C3E50', '#E74C3C'],
-      colorsToAvoid: ['#808080', '#C0C0C0'],
-      matchingWords: ['auténtico', 'para vos', 'tu estilo', 'parte de tu rutina', 'lo que elegís'],
-    },
-  ];
-
-  // ── creative angles ──────────────────────────────────────────────────────
-  const creativeAngles = [
-    {
-      id: 'ca_01',
-      name: 'Problema → Solución',
-      emotion: 'Alivio y resolución',
-      targetAudience: 'Compradores activos que ya sienten el problema',
-      whyItCouldWork: 'Conecta primero con la frustración antes de mostrar el producto — alta relevancia',
-      risk: 'Si el problema no es universal puede segmentar demasiado',
-      recommendedVisual: 'Imagen del problema sin producto, luego producto como resolución',
-    },
-    {
-      id: 'ca_02',
-      name: 'Calidad Real Sin Exagerar',
-      emotion: 'Confianza y seguridad',
-      targetAudience: 'Compradores que ya fueron quemados por productos baratos',
-      whyItCouldWork: 'La honestidad es diferencial cuando todos exageran — genera credibilidad instantánea',
-      risk: 'Puede sentirse menos emocionante sin un resultado prometido',
-      recommendedVisual: 'Close-up de materiales, empaque, detalle de construcción',
-    },
-    {
-      id: 'ca_03',
-      name: 'Contexto de Uso Aspiracional',
-      emotion: 'Deseo e identificación',
-      targetAudience: 'Compradores que se proyectan en el estilo de vida del producto',
-      whyItCouldWork: 'Vende el resultado emocional, no el producto — más memorable',
-      risk: 'Sin muestra real las imágenes de lifestyle deben ser genéricas — menos auténticas',
-      recommendedVisual: 'Lifestyle natural: producto integrado en ambiente cotidiano deseable',
-    },
-    {
-      id: 'ca_04',
-      name: 'Precio/Valor Directo',
-      emotion: 'Sensación de inteligencia de compra',
-      targetAudience: 'Compradores comparadores que justifican la compra con lógica',
-      whyItCouldWork: 'En mercados con mucha competencia de precio, explicar el valor es diferencial',
-      risk: 'Si el precio no es competitivo este ángulo se vuelve en contra',
-      recommendedVisual: 'Comparación visual sin naming de competidores, tabla de características',
-    },
-    {
-      id: 'ca_05',
-      name: 'Curiosidad / Unboxing',
-      emotion: 'Anticipación y deseo',
-      targetAudience: 'Compradores impulsivos y audiencias de descubrimiento (tráfico frío)',
-      whyItCouldWork: 'El formato de revelación retiene atención — bueno para awareness',
-      risk: 'Baja intención de compra directa — sirve más para tráfico de marca',
-      recommendedVisual: 'Manos abriendo caja, producto revelándose gradualmente',
-    },
-    {
-      id: 'ca_06',
-      name: 'Escasez / Preventa Honesta',
-      emotion: 'Urgencia y exclusividad sin presión falsa',
-      targetAudience: 'Compradores ya interesados que necesitan el último empujón',
-      whyItCouldWork: 'Para lanzamientos, el "primer lote limitado" es real y creíble sin manipulación',
-      risk: 'Si el stock nunca es limitado, la audiencia pierde confianza',
-      recommendedVisual: 'Story con badge de "preventa" o "lote inicial", contador opcional',
-    },
-  ];
-
-  // ── audience segments ────────────────────────────────────────────────────
-  const audienceSegments = [
-    {
-      id: 'as_01',
-      name: 'Comprador Investigador',
-      painDesire: 'Quiere tomar la mejor decisión posible y no arrepentirse de la compra',
-      whyItMatters: 'Compra con más certeza, menor tasa de devolución, deja reseñas detalladas',
-      buyingMotivation: 'Comparaciones claras, especificaciones reales, garantía visible',
-      riskObjection: '¿Es de calidad real o solo looks bien en la foto?',
-    },
-    {
-      id: 'as_02',
-      name: 'Buscador de Comodidad',
-      painDesire: 'Quiere resolver el problema ya, sin complicaciones ni aprendizaje',
-      whyItMatters: 'Alta velocidad de decisión, menor resistencia de precio si el beneficio es claro',
-      buyingMotivation: 'Facilidad de uso, entrega rápida, proceso de compra sin fricción',
-      riskObjection: '¿Funciona desde el primer uso o necesita configuración?',
-    },
-    {
-      id: 'as_03',
-      name: 'Comprador de Regalo',
-      painDesire: 'Quiere regalar algo que impresione sin gastar de más',
-      whyItMatters: 'Ticket promedio más alto, menor sensibilidad al precio, valoriza el empaque',
-      buyingMotivation: 'Presentación, empaque cuidado, "se ve caro", opción de mensaje personalizado',
-      riskObjection: '¿Le va a gustar a quien se lo regalo? ¿Llega bien presentado?',
-    },
-    {
-      id: 'as_04',
-      name: 'Early Adopter Local',
-      painDesire: 'Quiere estar entre los primeros en tener algo que todavía no es masivo',
-      whyItMatters: 'Difunde orgánicamente, tolera imperfecciones de lanzamiento, UGC natural',
-      buyingMotivation: 'Novedad, exclusividad de primera oleada, precio de lanzamiento',
-      riskObjection: '¿Es algo que realmente no consigo en otro lado o es lo mismo de siempre?',
-    },
-  ];
-
-  // ── offer directions ─────────────────────────────────────────────────────
-  const offerDirections = [
-    {
-      id: 'od_01',
-      name: 'Lanzamiento Estándar',
-      offerIdea: `${shortTitle} a precio de introducción por tiempo limitado (10-15% de descuento sobre precio objetivo)`,
-      whyItCouldWork: 'Bajo riesgo, directo al punto, fácil de comunicar',
-      marginCaution: 'Verificá que el descuento no baje el múltiplo por debajo de tu mínimo',
-      whenNotToUse: 'Si el posicionamiento es premium — el descuento puede dañar la percepción de valor',
-    },
-    {
-      id: 'od_02',
-      name: 'Bundle de Valor',
-      offerIdea: `${shortTitle} + accesorio complementario (estuche, guía, item de bajo costo) al mismo precio`,
-      whyItCouldWork: 'Sube el valor percibido sin bajar el precio — mejor AOV y menor comparación directa',
-      marginCaution: 'El accesorio debe costar poco — máximo 10-15% del precio del producto principal',
-      whenNotToUse: 'Si el accesorio es difícil de conseguir rápido — complica el lanzamiento',
-    },
-    {
-      id: 'od_03',
-      name: 'Preventa con Garantía',
-      offerIdea: `Reserva anticipada con garantía de devolución total si el producto no cumple expectativas`,
-      whyItCouldWork: 'Elimina el riesgo percibido — ideal para compradores que quieren pero dudan',
-      marginCaution: 'Asegurate de tener el stock listo para entregar en el plazo prometido',
-      whenNotToUse: 'Si el producto ya está disponible — la preventa pierde lógica y credibilidad',
-    },
-  ];
-
-  // ── static creatives (BoardCreative format) ──────────────────────────────
-  const hook0 = angles[0] ?? `¿Cansado del problema que ${shortTitle} resuelve?`;
-  const hook1 = angles[1] ?? `${shortTitle} — sin vueltas.`;
-  const hook2 = angles[2] ?? `Así se usa en la vida real.`;
-
-  const staticCreatives = [
-    {
-      id: 'sc_01', hook: hook0, angle: 'Problema-solución',
-      format: '4:5', mainCopy: `Hay una forma más inteligente de hacerlo. ${shortTitle} existe para eso.`,
-      visualDirection: 'Imagen de problema (sin producto) con texto superpuesto exterior',
-      cta: 'Ver más', whyTestThis: 'Conecta con la frustración antes de mostrar el producto',
-      whatItValidates: 'Resonancia del problema con el público objetivo',
-      claimRisk: 'low' as const, claimCaution: 'No menciona resultado específico — solo el problema',
-    },
-    {
-      id: 'sc_02', hook: `${shortTitle} — diseñado para durar.`, angle: 'Credibilidad',
-      format: '1:1', mainCopy: 'No improvisamos. Cada detalle importa.',
-      visualDirection: 'Producto solo sobre fondo blanco, luz de estudio',
-      cta: 'Conocer más', whyTestThis: 'Construye credibilidad visual sin claims de performance',
-      whatItValidates: 'Percepción de calidad antes de tener muestra física',
-      claimRisk: 'low' as const, claimCaution: 'Sin promesas de durabilidad hasta validar con muestra',
-    },
-    {
-      id: 'sc_03', hook: hook2, angle: 'Lifestyle aspiracional',
-      format: '4:5', mainCopy: 'Sin complicaciones. Sin curva de aprendizaje.',
-      visualDirection: 'Lifestyle natural: persona usando en ambiente cotidiano',
-      cta: 'Descubrir', whyTestThis: 'Muestra contexto de uso sin claims de resultado',
-      whatItValidates: 'Atractivo visual y fit con el público objetivo',
-      claimRisk: 'low' as const, claimCaution: 'No promete resultado — solo muestra uso natural',
-    },
-    {
-      id: 'sc_04', hook: 'Stock limitado para este lanzamiento.', angle: 'Escasez de lanzamiento',
-      format: '9:16', mainCopy: 'Solo para los primeros compradores. Primer lote reducido, sin promesas exageradas.',
-      visualDirection: 'Story vertical con badge "Preventa" o "Lote inicial"',
-      cta: 'Reservar el mío', whyTestThis: 'Convierte la escasez real de lanzamiento en urgencia honesta',
-      whatItValidates: 'Conversión con oferta de primer lote',
-      claimRisk: 'medium' as const, claimCaution: 'Solo si el stock es realmente limitado — si no, daña la confianza',
-    },
-    {
-      id: 'sc_05', hook: '¿Qué hay adentro?', angle: 'Curiosidad / Unboxing',
-      format: '4:5', mainCopy: 'La experiencia empieza desde que abrís la caja.',
-      visualDirection: 'Manos abriendo empaque, contenido revelándose',
-      cta: 'Ver proceso', whyTestThis: 'El formato de revelación retiene atención en frío',
-      whatItValidates: 'Curiosidad e interés previo a tener muestra real',
-      claimRisk: 'low' as const, claimCaution: 'No hace ningún claim de producto — solo unboxing',
-    },
-    {
-      id: 'sc_06', hook: 'La diferencia está en los detalles.', angle: 'Trust building',
-      format: '1:1', mainCopy: 'Empaque que cuida el producto. Porque el primer contacto importa.',
-      visualDirection: 'Close-up de empaque, detalles de materiales, luz lateral suave',
-      cta: 'Ver producto', whyTestThis: 'Eleva percepción de calidad sin claims de funcionamiento',
-      whatItValidates: 'Percepción de calidad del packaging',
-      claimRisk: 'low' as const, claimCaution: 'Solo muestra el empaque — sin claims de contenido',
-    },
-    {
-      id: 'sc_07', hook: `Parte de tu rutina.`, angle: 'Identidad / Lifestyle',
-      format: '1:1', mainCopy: `${shortTitle}. Simple. Efectivo. Parte de lo que hacés bien.`,
-      visualDirection: 'Flat lay con producto y accesorios complementarios sobre superficie neutra',
-      cta: 'Ver detalles', whyTestThis: 'Vende estilo de vida, no el producto — más emocional',
-      whatItValidates: 'Fit estético e identitario con el público objetivo',
-      claimRisk: 'low' as const, claimCaution: 'No menciona resultado físico ni funcionamiento',
-    },
-    {
-      id: 'sc_08', hook: pos ? pos.split('.')[0] : `${shortTitle}: la elección inteligente.`, angle: 'Posicionamiento directo',
-      format: '16:9', mainCopy: 'Sin exageraciones. Solo lo que necesitás saber para decidir bien.',
-      visualDirection: 'Producto en ambiente elegante y minimalista, hero horizontal para web',
-      cta: 'Ver colección', whyTestThis: 'Hero de tienda que posiciona antes que convierte',
-      whatItValidates: 'CTR en tráfico de búsqueda y email',
-      claimRisk: 'low' as const, claimCaution: 'Sin atributos específicos hasta validar con muestra',
-    },
-    {
-      id: 'sc_09', hook: hook1, angle: 'Solución directa',
-      format: '9:16', mainCopy: `No prometemos lo que no podemos verificar. Sí prometemos ${shortTitle} y atención real.`,
-      visualDirection: 'Story vertical con texto y CTA centrado, imagen de producto limpia',
-      cta: 'Probalo ahora', whyTestThis: 'La honestidad es diferencial cuando todos exageran',
-      whatItValidates: 'Conversión con mensaje de credibilidad',
-      claimRisk: 'low' as const, claimCaution: 'Explícitamente no hace claims no verificados',
-    },
-    {
-      id: 'sc_10', hook: '¿Por qué vale lo que vale?', angle: 'Precio/Valor',
-      format: '4:5', mainCopy: `Porque ${shortTitle} no es el más barato. Es el que vale lo que pagás.`,
-      visualDirection: 'Comparación visual en dos columnas sin naming de competidores',
-      cta: 'Comparar opciones', whyTestThis: 'En mercados de precio, explicar el valor es diferencial',
-      whatItValidates: 'Sensibilidad al precio y percepción de valor',
-      claimRisk: 'medium' as const, claimCaution: 'La comparación debe ser honesta — no exagerar diferencias no verificadas',
-    },
-    {
-      id: 'sc_11', hook: 'Tan simple que no necesita manual.', angle: 'Facilidad de uso',
-      format: '4:5', mainCopy: 'Diseñado para usarse desde el primer día, sin tutoriales.',
-      visualDirection: 'Manos usando el producto de forma natural, primer plano íntimo',
-      cta: 'Ver cómo funciona', whyTestThis: 'Reduce la barrera de adopción para compradores cautelosos',
-      whatItValidates: 'Percepción de facilidad de uso',
-      claimRisk: 'medium' as const, claimCaution: 'Validar que realmente es intuitivo cuando llegue la muestra',
-    },
-    {
-      id: 'sc_12', hook: `¿Conocés ${shortTitle}?`, angle: 'Descubrimiento frío',
-      format: '1:1', mainCopy: `No para todo el mundo. Pero si estabas buscando algo así — esto es para vos.`,
-      visualDirection: 'Producto hero sobre fondo de acento, texto introductorio mínimo',
-      cta: 'Conocer más', whyTestThis: 'Awareness en audiencia nueva sin interés previo declarado',
-      whatItValidates: 'Alcance y CPM en tráfico completamente frío',
-      claimRisk: 'low' as const, claimCaution: 'Puramente de descubrimiento — sin claims de ningún tipo',
-    },
-  ];
-
-  // ── image prompts (BoardImagePrompt format) ──────────────────────────────
-  const imagePrompts = [
-    {
-      id: 'ip_01', title: 'Hero producto plano',
-      objective: 'Imagen principal de tienda y creativos de producto',
-      prompt: `${title} product flat lay on white background, studio lighting, sharp focus, professional product photography, minimalist, no text, no logos`,
-      avoid: 'text, watermark, shadow clutter, dark background, people',
-      claimSafetyNote: 'No muestra características físicas no verificadas — solo el producto sobre blanco',
-    },
-    {
-      id: 'ip_02', title: 'Lifestyle uso natural',
-      objective: 'Mostrar contexto de uso sin claims de resultado',
-      prompt: `person naturally using ${title.toLowerCase()}, lifestyle photography, bright ambient light, authentic moment, no text, modern interior`,
-      avoid: 'text, logos, before/after, dramatic expressions, exaggerated claims',
-      claimSafetyNote: 'No promete resultado — solo contexto de uso auténtico',
-    },
-    {
-      id: 'ip_03', title: 'Close-up textura y empaque',
-      objective: 'Elevar percepción de calidad y materiales',
-      prompt: `close up product packaging, soft side lighting, texture detail, premium feel, macro photography, no text visible on product, clean background`,
-      avoid: 'text on product, blur, dark background, grungy',
-      claimSafetyNote: 'Muestra empaque y textura — sin claims de durabilidad o funcionamiento',
-    },
-    {
-      id: 'ip_04', title: 'Flat lay lifestyle',
-      objective: 'Contenido de feed estético para redes sociales',
-      prompt: `${title.toLowerCase()} flat lay arrangement, complementary items, neutral linen surface, overhead shot, natural daylight, styled composition, no text`,
-      avoid: 'text, watermark, cluttered composition, artificial colors',
-      claimSafetyNote: 'Composición estética pura — sin claims de producto',
-    },
-    {
-      id: 'ip_05', title: 'Representación del problema',
-      objective: 'Set-up emocional del problema que resuelve (sin mostrar el producto)',
-      prompt: `person experiencing frustration or challenge related to ${title.toLowerCase()}, candid expression, natural setting, relatable scenario, soft light, no text`,
-      avoid: 'product visible, text, logos, exaggerated or fake expressions',
-      claimSafetyNote: 'Solo muestra el problema — el producto no aparece, sin claims',
-    },
-    {
-      id: 'ip_06', title: 'Comparación de valor',
-      objective: 'Creativos de valor percibido frente a alternativa genérica',
-      prompt: `side by side comparison shot, ${title.toLowerCase()} versus common alternative solution, clean studio background, no text overlay needed, professional photography`,
-      avoid: 'text in image, messy background, brand names of competitors',
-      claimSafetyNote: 'Comparación visual sin claims de performance cuantificado',
-    },
-    {
-      id: 'ip_07', title: 'Detalle de uso: manos',
-      objective: 'Mostrar intuitividad y facilidad de uso real',
-      prompt: `hands using ${title.toLowerCase()}, close up shot, natural light, authentic gesture, skin-tone neutral, no text, editorial style`,
-      avoid: 'text, logos, overly perfect manicure, artificial pose, studio feel',
-      claimSafetyNote: 'No muestra resultado — solo el acto de uso natural',
-    },
-    {
-      id: 'ip_08', title: 'Ambiente premium para hero de tienda',
-      objective: 'Imagen aspiracional para cabecera de tienda online',
-      prompt: `${title.toLowerCase()} in elegant minimalist interior, soft natural light from window, premium lifestyle setting, wide shot, no people, no text`,
-      avoid: 'text, busy background, cluttered scene, harsh shadows',
-      claimSafetyNote: 'Ambiente aspiracional — sin claims sobre el producto en sí',
-    },
-    {
-      id: 'ip_09', title: 'Story formato vertical',
-      objective: 'Imagen para Instagram/Facebook Stories con espacio para texto',
-      prompt: `${title.toLowerCase()} vertical product shot, bold composition, gradient background, space at top and bottom for text overlay, vibrant colors, no text in image`,
-      avoid: 'text embedded in image, horizontal composition, small or distant product',
-      claimSafetyNote: 'Canvas en blanco para agregar copy externo — sin claims embebidos',
-    },
-    {
-      id: 'ip_10', title: 'Unboxing primer plano',
-      objective: 'Crear anticipación y deseo de compra',
-      prompt: `unboxing experience, hands opening packaging of ${title.toLowerCase()}, warm light, close up, excitement without exaggeration, clean background, no text`,
-      avoid: 'text, logos visible, dramatic or fake excitement, staged expressions',
-      claimSafetyNote: 'Solo muestra el proceso de apertura — sin claims de calidad del producto',
-    },
-  ];
-
-  // ── store direction ──────────────────────────────────────────────────────
-  const storeDirection: any = {
-    heroHeadline: pos ? pos.split('.')[0] : `${shortTitle}: la elección que tiene sentido.`,
-    heroSubheadline: `Sin exageraciones. Sin promesas vacías. Solo ${shortTitle} y lo que realmente hace.`,
-    cta: 'Comprar ahora',
-    keySections: [
-      'Hero con headline + CTA principal',
-      'Beneficios en 3-4 puntos concretos con íconos',
-      'Cómo funciona en 3 pasos simples',
-      'Galería de producto (hero + lifestyle + detalle)',
-      'Garantía y política de devolución visible',
-      'Preguntas frecuentes en acordeón',
-    ],
-    topObjections: [
-      '¿Es de calidad real o se ve bien solo en la foto?',
-      '¿Cuánto tarda en llegar y cómo llega embalado?',
-      '¿Qué pasa si no me convence o llega roto?',
-      '¿Es original o una copia barata?',
-    ],
-    shortDescription: `${shortTitle} es la solución para quienes buscan [resultado principal] sin complicaciones. Diseñado para uso real, empaque cuidado y garantía de 30 días.`,
-    platformSuggestion: platform,
-  };
-
-  // ── shot list (BoardShot format) ─────────────────────────────────────────
-  const shotList = [
-    {
-      id: 'shot_01', priority: 'must-have' as const,
-      goal: 'Imagen principal de tienda — credibilidad inmediata',
-      setup: 'Superficie blanca, luz natural lateral + softbox, cámara a 45° o cenital',
-      whatToShow: 'Producto solo, bien encuadrado, sin distorsiones',
-      whatToAvoid: 'Sombras duras, fondo sucio, producto fuera de foco',
-    },
-    {
-      id: 'shot_02', priority: 'must-have' as const,
-      goal: 'Mostrar calidad de materiales sin claims',
-      setup: 'Macro o modo retrato, luz raking lateral para resaltar textura',
-      whatToShow: 'Textura, acabado, materiales reales del producto',
-      whatToAvoid: 'Filtros que saturen, ángulos que distorsionen tamaño real',
-    },
-    {
-      id: 'shot_03', priority: 'must-have' as const,
-      goal: 'Credibilidad de uso real en manos',
-      setup: 'Manos naturales sin manicura perfecta, luz ambiente, fondo cotidiano',
-      whatToShow: 'Gesto de uso natural, proporciones reales del producto',
-      whatToAvoid: 'Poses artificiales, manos demasiado perfectas, fondo de estudio falso',
-    },
-    {
-      id: 'shot_04', priority: 'must-have' as const,
-      goal: 'Contenido de anticipación y curiosidad',
-      setup: '30-60 segundos, plano cenital de manos abriendo, mostrar interior del empaque',
-      whatToShow: 'Proceso de apertura completo, interior del empaque, primera impresión real',
-      whatToAvoid: 'Reacciones exageradas, cortes abruptos, empaque sucio o aplastado',
-    },
-    {
-      id: 'shot_05', priority: 'must-have' as const,
-      goal: 'Conectar con el contexto de uso en ambiente real',
-      setup: 'Ambiente del hogar o lugar de uso, iluminación natural, persona real (no modelo)',
-      whatToShow: 'Producto integrado en la vida cotidiana de forma natural',
-      whatToAvoid: 'Ambientes demasiado perfectos o staging obvio, personas posando',
-    },
-    {
-      id: 'shot_06', priority: 'nice-to-have' as const,
-      goal: 'Validar impacto visible del producto (solo si el resultado es observable)',
-      setup: 'Encuadre fijo, mismas condiciones de luz, producto antes y después del uso',
-      whatToShow: 'Solo si el resultado es honestamente visible — no editar para exagerar',
-      whatToAvoid: 'Edición engañosa, diferencias mínimas artificialmente infladas',
-    },
-    {
-      id: 'shot_07', priority: 'nice-to-have' as const,
-      goal: 'Elevar percepción de marca con empaque cuidado',
-      setup: 'Plano cenital del paquete completo, iluminación suave y pareja, fondo neutro',
-      whatToShow: 'Empaque completo, cualquier inserto o tarjeta incluida',
-      whatToAvoid: 'Empaque arrugado, iluminación irregular, fondo con distracciones',
-    },
-    {
-      id: 'shot_08', priority: 'nice-to-have' as const,
-      goal: 'Establecer escala y proporciones reales del producto',
-      setup: 'Mano adulta sosteniendo el producto, fondo neutro',
-      whatToShow: 'Tamaño real del producto en contexto con mano humana',
-      whatToAvoid: 'Ángulos que hagan el producto parecer más grande o más pequeño',
-    },
-    {
-      id: 'shot_09', priority: 'nice-to-have' as const,
-      goal: 'Prueba de resistencia básica (solo si aplica y es honesta)',
-      setup: 'Solo grabar si el test es genuino — si el producto falla, no publicar',
-      whatToShow: 'Prueba simple y real que el producto pueda pasar honestamente',
-      whatToAvoid: 'Tests que el producto no puede pasar realmente, edición para ocultar fallas',
-    },
-    {
-      id: 'shot_10', priority: 'nice-to-have' as const,
-      goal: 'UGC orgánico: reacción genuina al primer uso',
-      setup: 'Sin guión, cámara fija, reacción espontánea al abrir o usar por primera vez',
-      whatToShow: 'Reacción auténtica — buena o neutral, no forzada',
-      whatToAvoid: 'Actuación obvia, guión memorizado, expresiones de sorpresa fake',
-    },
-  ];
+// ─── Fallback generator ───────────────────────────────────────────────────────
+function buildFallback(winnerData: any, battleCtx: any): any {
+  const country = winnerData.product?.country ?? 'AR';
+  const locale  = getLocale(country);
+  const title   = winnerData.product?.title ?? 'Producto';
+  const score   = winnerData.result?.adjustedScore ?? winnerData.result?.score ?? 0;
+  const verdict = winnerData.result?.verdict ?? 'maybe';
+  const risks   = (winnerData.analysis?.keyRisks ?? []) as string[];
+  const angles  = (winnerData.analysis?.angles ?? []) as any[];
+  const m       = winnerData.margin ?? {};
+  const short   = title.split(' ').slice(0, 3).join(' ');
+  const opponent = battleCtx?.opponent ?? 'producto rival';
 
   return {
-    product,
-    brandTerritories,
-    creativeAngles,
-    audienceSegments,
-    offerDirections,
-    staticCreatives,
-    imagePrompts,
-    storeDirection,
-    shotList,
-    market: {
-      country,
-      language: locale.language,
-      currency: locale.currency,
-      tone: locale.tone,
+    product: { title, score, verdict, country, marginMultiple: m.multiple ?? 0 },
+    battle: {
+      opponent,
+      whyWon: battleCtx?.whyWon ?? battleCtx?.reason ?? `Score superior y mejor margen.`,
+      keyDifference: battleCtx?.keyDifference ?? `Mejor potencial publicitario y margen sostenible.`,
+      confidence: battleCtx?.confidence ?? 75,
+      recommendation: battleCtx?.recommendation ?? `Avanzar con ${short} como producto principal de testeo.`,
     },
+    market: { country, language: locale.language, currency: locale.currency, tone: locale.tone },
+    winnerSnapshot: {
+      battleAdvantage: `${short} superó a "${opponent}" en margen sostenible y potencial de escalado con pauta.`,
+      mainRisks: risks.slice(0, 3).length > 0 ? risks.slice(0, 3) : ['Saturación de mercado posible', 'Logística puede complicarse'],
+      missingValidations: ['Confirmar calidad real con muestra física', 'Validar que el proveedor puede cumplir MOQ y tiempos', 'Testear ángulo principal con pauta antes de comprar stock'],
+    },
+    strategicDecision: {
+      whyLaunch: `${short} tiene margen viable (${m.multiple ?? 0}x) y venció en batalla directa. La señal de demanda justifica un test controlado antes de comprometer stock.`,
+      functionalProblem: angles[0]?.trigger ? `Problema ligado a ${angles[0].trigger.toLowerCase()}` : 'Problema funcional concreto sin resolver bien en el mercado actual',
+      emotionalProblem: 'Frustración acumulada por alternativas que no cumplen lo prometido',
+      mainDesire: `Resolver el problema rápido, sin drama, con un producto que realmente funcione`,
+      alternativeReplaced: `Opciones baratas de baja calidad o productos más caros sin diferenciación real`,
+      mainHypothesis: angles[0]?.hook ? `"${angles[0].hook}" convertirá a costo por venta aceptable en ${country}` : `El ángulo de problema-solución convertirá mejor que lifestyle en el mercado objetivo`,
+      killRisk: risks[0] ?? 'Si el proveedor no puede mantener calidad consistente en pedidos repetidos',
+    },
+    unitEconomics: {
+      suggestedRetailPrice: `Calcular entre ${m.multiple ?? 3}x–${(m.multiple ?? 3) + 0.5}x el costo total`,
+      estimatedLandedCost: m.totalCost ? `$${m.totalCost} USD por unidad (suma de producto + importación + fees)` : 'Confirmar con cotización del proveedor + agente aduanero',
+      grossMarginUSD: m.grossProfit ? `$${m.grossProfit} USD por unidad` : 'Depende del precio final de venta',
+      grossMarginPct: m.marginPct ? `${Math.round(m.marginPct * 100)}% sobre precio de venta` : 'Objetivo mínimo: 60% sobre precio de venta',
+      maxCACRecommendation: m.grossProfit ? `Máximo $${Math.round(m.grossProfit * 0.35)} USD (35% del margen bruto) para escalar con pauta` : 'Máximo 35% del margen bruto calculado',
+      breakEvenLogic: `Con CAC = margen bruto, break-even es la primera venta. Con CAC < 30% margen, cada venta es rentable`,
+      recommendedOffer: `Precio directo de lanzamiento, sin descuentos en la primera campaña de testeo`,
+      bundleIdea: `Evaluar incluir accesorio de bajo costo o garantía extendida para subir AOV sin bajar precio`,
+      discountLimit: `No más de 10–15% de descuento. Por debajo de eso se destruye margen sin ganar más conversiones`,
+    },
+    positioning: {
+      categoryFraming: `${short} como [categoría funcional] para [audiencia principal]`,
+      oneLiner: angles[0]?.hook ? `"${angles[0].hook}"` : `${short}: el producto que resuelve [problema] sin compromiso`,
+      mainPromise: `Resolver [problema específico] de forma confiable, en el primer uso, sin necesidad de configuración compleja`,
+      dangerousPromises: ['Garantizar resultados que dependen del usuario', 'Claims médicos o de salud sin respaldo', 'Comparaciones directas con marcas conocidas'],
+      primaryAudience: `Compradores de 25–45 años en ${country} con intención de compra activa`,
+      secondaryAudience: `Compradores de regalo para [ocasión relevante] en el mismo rango etario`,
+      useCases: [`Uso cotidiano en [contexto principal]`, `Solución de urgencia cuando el problema aparece`, `Regalo para [perfil de receptor]`],
+      objectionsToOvercome: [`¿Funciona de verdad o se ve bien solo en la foto?`, `¿Vale lo que cuesta comparado con alternativas?`, `¿Cómo sé que llega bien y en tiempo?`],
+    },
+    creativeAngles: angles.slice(0, 4).map((a: any, i: number) => ({
+      id: `ca_0${i + 1}`,
+      name: a.angle ?? `Ángulo ${i + 1}`,
+      emotion: a.trigger ?? 'Relevancia inmediata',
+      hook: a.hook ?? `Hook del ángulo ${i + 1}`,
+      visualDirection: 'Mostrar el producto en uso real en el contexto del problema',
+      objectionAttacked: i === 0 ? '¿Funciona de verdad?' : i === 1 ? '¿Vale lo que cuesta?' : '¿Llega bien?',
+      hypothesis: `Este hook activa a compradores con intención y reduce el CAC en ${country}`,
+      risk: 'Si la audiencia no reconoce el problema, el copy no conecta',
+      confidence: i === 0 ? 'high' : i === 1 ? 'high' : 'medium',
+    })),
+    creativeTestingPlan: {
+      staticAds: [
+        {
+          id: 'sa_01',
+          concept: 'Problema directo con solución',
+          hook: angles[0]?.hook ?? `¿Cansado de [problema]?`,
+          copy: `[Nombre del problema]. ${short} lo resuelve en el primer uso. Sin complicaciones.`,
+          whatItTests: 'Relevancia del problema con la audiencia objetivo',
+          winSignal: 'CTR > 2% y CPC < umbral de CAC objetivo',
+          winAction: 'Escalar presupuesto y testear variación con precio visible',
+        },
+        {
+          id: 'sa_02',
+          concept: 'Calidad percibida / prueba social',
+          hook: `Lo que todos están probando en ${country}`,
+          copy: `${short}. [Beneficio principal]. [Beneficio secundario]. Envío en [X] días.`,
+          whatItTests: 'Peso de la prueba social vs. el argumento funcional',
+          winSignal: 'ROAS > 2x en los primeros 3 días de pauta',
+          winAction: 'Agregar testimoniales reales y escalar con video',
+        },
+      ],
+      ugcBriefs: [
+        {
+          id: 'ugc_01',
+          hook: `"No esperaba que funcionara así de bien"`,
+          brief: `Video de 15-30 segundos. Persona real mostrando el producto en su entorno. Narración honesta sin guión memorizado. Mostrar el resultado al final.`,
+          whatItTests: 'Autenticidad vs. producción pulida para conversión',
+          winSignal: 'Watch-through > 60% y comentarios positivos orgánicos',
+        },
+      ],
+      hookVariations: [
+        angles[0]?.hook ?? `El problema que nadie resuelve bien`,
+        `Por qué el 80% lo hace diferente ahora`,
+        `Antes de comprar el genérico, leé esto`,
+        `Lo probamos. Acá el resultado honesto`,
+      ],
+    },
+    storeLanding: {
+      headline: angles[0]?.hook ?? `${short}: [beneficio principal] sin [objeción principal]`,
+      subheadline: `Para quienes quieren [resultado] sin [complicación]. Entrega en ${country} en [X] días.`,
+      heroCopy: `${short} resuelve [problema funcional]. Sin instrucciones de 10 páginas. Sin promesas vacías. Solo funciona.`,
+      benefits: [`[Beneficio 1 — funcional y medible]`, `[Beneficio 2 — emocional o de conveniencia]`, `[Beneficio 3 — reducción de riesgo]`],
+      problemStatement: `Si todavía usás [alternativa inferior], ya sabés cómo termina. ${short} existe para eso.`,
+      solutionStatement: `${short} [verbo de acción] [resultado] en [timeframe real]. Sin exageraciones.`,
+      howItWorks: [`Paso 1: [acción simple]`, `Paso 2: [acción simple]`, `Paso 3: [resultado observable]`],
+      objectionsFAQ: [
+        { q: '¿Funciona de verdad o es otro producto mediocre?', a: '[Respuesta honesta con prueba o garantía]' },
+        { q: '¿Cuándo llega?', a: `Entrega en [X–Y] días hábiles en ${country}.` },
+        { q: '¿Qué pasa si no me gusta?', a: '[Política de devolución clara y sin drama]' },
+      ],
+      cta: 'Comprar ahora',
+      shortDescription: `${short}: [beneficio principal] para [audiencia]. [Característica clave]. Entrega en ${country}.`,
+      longDescription: `${short} fue desarrollado para [persona con problema X]. A diferencia de [alternativa], ${short} [diferenciador real]. Ideal para [caso de uso 1] y [caso de uso 2]. [Garantía o respaldo].`,
+      blockOrder: ['Hero (headline + CTA + imagen principal)', 'Problema / Por qué existe', 'Solución / Cómo funciona', 'Beneficios (3 bullets)', 'Prueba visual / Demo', 'Objeciones / FAQ', 'CTA final + envío y devolución'],
+    },
+    preImportValidation: {
+      supplierQuestions: [
+        '¿Podés enviar muestras antes del pedido bulk? ¿Costo y tiempo?',
+        '¿Cuál es el MOQ real y qué pasa si el primer pedido es menor?',
+        '¿Cómo manejan defectos? ¿Qué % de reposición garantizan?',
+        '¿Qué certificaciones tiene el producto (CE, RoHS, FDA, etc.)?',
+        '¿Tienes packaging personalizable? ¿Desde qué cantidad?',
+      ],
+      mediaToRequest: [
+        'Fotos HD del producto real (no render) en 5 ángulos mínimo',
+        'Video corto mostrando el producto en uso (30–60 segundos)',
+        'Foto del packaging real (exterior e interior)',
+        'Foto comparativa de escala con objeto de referencia',
+      ],
+      certificationsToVerify: [
+        'Certificación de seguridad según el destino (CE para EU, FDA para US)',
+        'Declaración de conformidad del proveedor',
+        'Hoja técnica con especificaciones reales (materiales, medidas, peso)',
+      ],
+      sampleTests: [
+        'Probar el producto como lo usaría el comprador final (primer uso real)',
+        'Comparar con la descripción y fotos del proveedor — ¿coincide?',
+        'Evaluar empaque: ¿sobrevive el transporte? ¿se ve bien en unboxing?',
+        'Tomar fotos y video propios para comparar con material del proveedor',
+        'Si aplica: test de resistencia, durabilidad o resultado prometido',
+      ],
+      killConditions: [
+        'El producto no coincide con las fotos enviadas por el proveedor',
+        'El defecto rate supera el 5% en la muestra',
+        'El proveedor no puede certificar el producto para el mercado destino',
+        risks[0] ? `Riesgo específico detectado: ${risks[0]}` : 'Calidad real por debajo de lo que el precio al consumidor justifica',
+      ],
+      firstStockRecommendation: `Empezar con el MOQ mínimo o entre 50–100 unidades para el test. No comprar stock completo hasta tener al menos 10 ventas reales y confirmar la tasa de devolución.`,
+    },
+    launchPlan: [
+      { period: 'Días 1–3', focus: 'Validación del proveedor', tasks: ['Contactar al proveedor y confirmar disponibilidad', 'Solicitar muestra y tiempo de entrega', 'Cotizar flete + aduana con agente local'], checkpoint: '¿El proveedor puede cumplir calidad, tiempo y MOQ?' },
+      { period: 'Días 4–6', focus: 'Preparación de oferta y landing', tasks: ['Definir precio de venta final', 'Redactar headline, copy y descripción', 'Seleccionar o preparar imágenes de producto'], checkpoint: '¿La oferta tiene sentido en el mercado y se puede comunicar en 1 frase?' },
+      { period: 'Días 7–9', focus: 'Configuración técnica', tasks: ['Crear listing o página de producto', 'Instalar píxel y configurar eventos de conversión', 'Preparar 2 creativos de testeo (estático + video o UGC)'], checkpoint: '¿El funnel técnico funciona de punta a punta?' },
+      { period: 'Días 10–11', focus: 'Muestra física', tasks: ['Recibir muestra del proveedor', 'Evaluar calidad vs. promesa', 'Tomar fotos y video propios del producto real'], checkpoint: '¿La muestra pasa el test de calidad? ¿Amerita avanzar?' },
+      { period: 'Días 12–14', focus: 'Test de pauta', tasks: ['Lanzar campaña con presupuesto mínimo ($15–20/día)', 'Testear 2 ángulos creativos en simultáneo', 'Monitorear CTR, CPC y primeras conversiones'], checkpoint: '¿Algún ángulo muestra señal de conversión rentable? → Decidir: escalar o ajustar' },
+    ],
   };
 }
 
-// ─── Gemini call ─────────────────────────────────────────────────────────────
-async function generatePreSample(data: any): Promise<any> {
-  if (process.env.TEMP_AI_BYPASS === 'true') return buildFallback(data);
+// ─── New Gemini prompt for Launch Command ─────────────────────────────────────
+async function generateLaunchCommand(winnerData: any, battleCtx: any): Promise<any> {
+  if (process.env.TEMP_AI_BYPASS === 'true') return buildFallback(winnerData, battleCtx);
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return buildFallback(data);
+  if (!apiKey) return buildFallback(winnerData, battleCtx);
 
-  const country = data.product?.country ?? 'AR';
+  const country = winnerData.product?.country ?? 'AR';
   const locale  = getLocale(country);
-  const schema  = `{
-  "product":{"title":"","score":0,"verdict":"","mainOpportunity":"","mainRisk":"","whyPursue":"","signalsSummary":""},
+
+  const schema = `{
+  "product":{"title":"","score":0,"verdict":"","country":"","marginMultiple":0},
+  "battle":{"opponent":"","whyWon":"","keyDifference":"","confidence":0,"recommendation":""},
   "market":{"country":"","language":"","currency":"","tone":""},
-  "brandTerritories":[{"id":"bt_01","name":"","commercialPositioning":"","perceivedValue":"","bestFor":"","whenToUse":"","whenNotToUse":"","visualDirection":"","storeUsage":"","adUsage":"","packagingUsage":"","suggestedColors":["#hex"],"colorsToAvoid":["#hex"],"matchingWords":[]}],
-  "creativeAngles":[{"id":"ca_01","name":"","emotion":"","targetAudience":"","whyItCouldWork":"","risk":"","recommendedVisual":""}],
-  "audienceSegments":[{"id":"as_01","name":"","painDesire":"","whyItMatters":"","buyingMotivation":"","riskObjection":""}],
-  "offerDirections":[{"id":"od_01","name":"","offerIdea":"","whyItCouldWork":"","marginCaution":"","whenNotToUse":""}],
-  "staticCreatives":[{"id":"sc_01","hook":"","angle":"","format":"","mainCopy":"","visualDirection":"","cta":"","whyTestThis":"","whatItValidates":"","claimRisk":"low","claimCaution":""}],
-  "imagePrompts":[{"id":"ip_01","title":"","objective":"","prompt":"English prompt for AI image generator","avoid":"","claimSafetyNote":""}],
-  "storeDirection":{"heroHeadline":"","heroSubheadline":"","cta":"","keySections":[],"topObjections":[],"shortDescription":"","platformSuggestion":""},
-  "shotList":[{"id":"shot_01","priority":"must-have","goal":"","setup":"","whatToShow":"","whatToAvoid":""}]
+  "winnerSnapshot":{"battleAdvantage":"","mainRisks":[""],"missingValidations":[""]},
+  "strategicDecision":{"whyLaunch":"","functionalProblem":"","emotionalProblem":"","mainDesire":"","alternativeReplaced":"","mainHypothesis":"","killRisk":""},
+  "unitEconomics":{"suggestedRetailPrice":"","estimatedLandedCost":"","grossMarginUSD":"","grossMarginPct":"","maxCACRecommendation":"","breakEvenLogic":"","recommendedOffer":"","bundleIdea":"","discountLimit":""},
+  "positioning":{"categoryFraming":"","oneLiner":"","mainPromise":"","dangerousPromises":[""],"primaryAudience":"","secondaryAudience":"","useCases":[""],"objectionsToOvercome":[""]},
+  "creativeAngles":[{"id":"ca_01","name":"","emotion":"","hook":"","visualDirection":"","objectionAttacked":"","hypothesis":"","risk":"","confidence":"high"}],
+  "creativeTestingPlan":{"staticAds":[{"id":"sa_01","concept":"","hook":"","copy":"","whatItTests":"","winSignal":"","winAction":""}],"ugcBriefs":[{"id":"ugc_01","hook":"","brief":"","whatItTests":"","winSignal":""}],"hookVariations":[""]},
+  "storeLanding":{"headline":"","subheadline":"","heroCopy":"","benefits":[""],"problemStatement":"","solutionStatement":"","howItWorks":[""],"objectionsFAQ":[{"q":"","a":""}],"cta":"","shortDescription":"","longDescription":"","blockOrder":[""]},
+  "preImportValidation":{"supplierQuestions":[""],"mediaToRequest":[""],"certificationsToVerify":[""],"sampleTests":[""],"killConditions":[""],"firstStockRecommendation":""},
+  "launchPlan":[{"period":"Días 1-2","focus":"","tasks":[""],"checkpoint":""}]
 }`;
 
-  const prompt = `Actuá como director creativo senior de ecommerce y director de arte especializado en LATAM y ecommerce global.
+  const prompt = `Sos un growth operator senior y director estratégico de ecommerce en LATAM.
 
-El usuario todavía NO tiene muestra física del producto. Tu tarea: crear un Launch Board PRE-SAMPLE completo.
+Tu tarea: generar un Launch Command completo para el producto ganador de una comparación directa con otro producto.
 
-ANÁLISIS DEL PRODUCTO:
-${formatAnalysis(data)}
+El Launch Command es un documento operativo de alta densidad que guía al founder desde la validación del proveedor hasta el primer test de pauta con criterios de decisión claros. Debe ser práctico, honesto y accionable.
 
-MERCADO OBJETIVO: ${country} — ${locale.language} — ${locale.currency} — Tono: ${locale.tone}
+${formatWinnerContext(winnerData, battleCtx)}
 
-REGLAS ESTRICTAS:
-1. No inventar textura, tamaño, peso, color real, duración, calidad ni funcionamiento exacto no confirmado.
-2. No hacer claims médicos, legales ni técnicos sin confirmación con muestra física.
-3. Adaptar idioma, tono, moneda y estilo al mercado: ${locale.language}.
-4. Los "prompt" de imagePrompts deben estar en inglés técnico para generadores de IA (Midjourney/DALL-E/SD).
-5. Los prompts de imagen NO deben contener texto visible, palabras escritas ni logos dentro de la imagen.
-6. Evitar frases: "revolucionario", "mágico", "imperdible", "increíble", "garantizado al 100%".
-7. Todos los copies (hook, mainCopy, etc.) deben estar en ${locale.language}.
-8. claimRisk debe ser "low", "medium" o "high" exactamente.
-9. priority en shotList debe ser "must-have" o "nice-to-have" exactamente.
+MERCADO: ${country} · ${locale.language} · ${locale.currency} · Tono: ${locale.tone}
 
-CANTIDADES MÍNIMAS OBLIGATORIAS:
-- brandTerritories: exactamente 3
-- creativeAngles: entre 4 y 6
-- audienceSegments: entre 3 y 4
-- offerDirections: exactamente 3
-- staticCreatives: mínimo 10, máximo 12 (IDs: sc_01 a sc_12)
-- imagePrompts: mínimo 8, máximo 10 (IDs: ip_01 a ip_10)
-- shotList: mínimo 8, máximo 10 — primeros 5 deben ser "must-have", resto "nice-to-have"
+INSTRUCCIONES POR SECCIÓN:
 
-Devolvé ÚNICAMENTE JSON válido con este schema (sin markdown, sin explicaciones):
+winnerSnapshot: Resume la ventaja táctica del ganador en la batalla. Los riesgos deben ser los 3 más importantes para el lanzamiento específico. Las missingValidations son lo que NO se sabe todavía y es crítico confirmar antes de comprar stock.
+
+strategicDecision: Analizar si realmente vale lanzar. Ser honesto — si los datos muestran dudas, reflejarlas. El killRisk es la única condición que cancela el lanzamiento completamente.
+
+unitEconomics: Usar los datos de margen del análisis para calcular todo. Si el precio de venta no está definido, sugerirlo basándose en el rango de precios ML y el múltiplo de margen. El maxCACRecommendation debe ser un número concreto en USD.
+
+positioning: El oneLiner debe ser usable como headline real. Las dangerousPromises son claims que el producto NO puede sostener sin muestra física confirmada. Los useCases deben ser contextos de uso reales y específicos.
+
+creativeAngles: Mínimo 4, máximo 6. Cada uno debe testear una hipótesis diferente. La confidence debe ser "high", "medium" o "low" exactamente. Los hooks deben estar en ${locale.language} y poder usarse directamente en un anuncio.
+
+creativeTestingPlan: Los staticAds deben ser 3 conceptos distintos con copy real usable. Los ugcBriefs deben ser 2 briefs concretos para grabar sin guión memorizado. Las hookVariations deben ser 6 variantes del hook principal, en tono diferente cada una.
+
+storeLanding: El headline debe funcionar como hero de una landing real. El blockOrder debe seguir el orden de conversión óptimo para el producto y mercado. Los objectionsFAQ deben responder las objeciones reales más frecuentes para este tipo de producto.
+
+preImportValidation: Las supplierQuestions deben ser preguntas reales para hacer por WhatsApp/Alibaba al proveedor. Las killConditions son condiciones concretas que, si se cumplen al recibir la muestra, cancelan la compra de stock.
+
+launchPlan: Plan de 14 días dividido en períodos de 2-3 días. Cada período tiene un foco claro y un checkpoint binario (¿sí o no?) que decide si continuar.
+
+REGLAS:
+1. Todo el texto en ${locale.language}, excepto los campos que son inherentemente en inglés.
+2. No usar: "revolucionario", "mágico", "increíble", "garantizado 100%", "el mejor".
+3. Los hooks deben ser directos, concretos y no genéricos.
+4. Los números deben ser coherentes con los datos del análisis.
+5. Si un dato no está disponible, indicarlo con "Confirmar con proveedor" — no inventar.
+6. Confidence en creativeAngles: exactamente "high", "medium" o "low".
+
+Devolvé ÚNICAMENTE JSON válido con este schema (sin markdown, sin texto fuera del JSON):
 ${schema}`;
 
   const ai = new GoogleGenAI({ apiKey });
@@ -596,89 +290,153 @@ ${schema}`;
     try {
       const res = await ai.models.generateContent({
         model, contents: prompt,
-        config: { temperature: 0.72, responseMimeType: 'application/json', maxOutputTokens: 16384 },
+        config: { temperature: 0.65, responseMimeType: 'application/json', maxOutputTokens: 16384 },
       });
       const raw = (res.text ?? '').replace(/```json/gi, '').replace(/```/g, '').trim();
       const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed.brandTerritories) || !Array.isArray(parsed.staticCreatives)) throw new Error('shape');
+      if (!Array.isArray(parsed.creativeAngles) || !parsed.strategicDecision) throw new Error('invalid shape');
+      console.log(`[pre-sample-studio] generated with model=${model}`);
       return parsed;
     } catch (err) {
       const is429 = String(err).includes('429') || String(err).includes('RESOURCE_EXHAUSTED');
-      console.log(`[pre-sample-studio] ${model} ${is429 ? 'rate-limited' : 'failed: ' + String(err).slice(0, 80)}`);
+      console.log(`[pre-sample-studio] ${model} ${is429 ? 'rate-limited' : 'failed: ' + String(err).slice(0, 100)}`);
       if (!is429) break;
     }
   }
 
-  return buildFallback(data);
+  return buildFallback(winnerData, battleCtx);
 }
 
-// ─── Sanitize ────────────────────────────────────────────────────────────────
-function cleanArr(v: unknown): string[] {
-  if (!Array.isArray(v)) return [];
-  return v.map(x => (typeof x === 'string' ? x.trim() : String(x ?? ''))).filter(Boolean);
-}
+// ─── Sanitize ─────────────────────────────────────────────────────────────────
+function arr(v: unknown): any[] { return Array.isArray(v) ? v : []; }
+function str(v: unknown, fallback = ''): string { return typeof v === 'string' && v.trim() ? v.trim() : fallback; }
 
-function sanitize(data: any): any {
-  data.brandTerritories   = Array.isArray(data.brandTerritories)   ? data.brandTerritories   : [];
-  data.creativeAngles     = Array.isArray(data.creativeAngles)     ? data.creativeAngles     : [];
-  data.audienceSegments   = Array.isArray(data.audienceSegments)   ? data.audienceSegments   : [];
-  data.offerDirections    = Array.isArray(data.offerDirections)    ? data.offerDirections    : [];
-  data.staticCreatives    = Array.isArray(data.staticCreatives)    ? data.staticCreatives    : [];
-  data.shotList           = Array.isArray(data.shotList)           ? data.shotList           : [];
+function sanitize(d: any, winnerData: any, battleCtx: any): any {
+  const country = winnerData.product?.country ?? 'AR';
+  const locale  = getLocale(country);
+  const title   = winnerData.product?.title ?? 'Producto';
+  const m       = winnerData.margin ?? {};
 
-  // Filter image prompts that embed text in the image
-  const requestsTextInImage = /\b(add text|with text|include text|overlay text|text overlay|show text|visible text|con texto|con letras|lettering inside|text inside)\b/i;
-  data.imagePrompts = Array.isArray(data.imagePrompts)
-    ? data.imagePrompts.filter((p: any) => !requestsTextInImage.test(p.prompt ?? ''))
-    : [];
+  d.product = {
+    title: str(d.product?.title, title),
+    score: Number(d.product?.score) || (winnerData.result?.adjustedScore ?? 0),
+    verdict: str(d.product?.verdict, winnerData.result?.verdict ?? 'maybe'),
+    country: str(d.product?.country, country),
+    marginMultiple: Number(d.product?.marginMultiple) || Number(m.multiple) || 0,
+  };
 
-  // Clamp claimRisk to valid values
-  data.staticCreatives = data.staticCreatives.map((c: any) => ({
-    ...c,
-    claimRisk: ['low','medium','high'].includes(c.claimRisk) ? c.claimRisk : 'medium',
+  d.battle = {
+    opponent: str(d.battle?.opponent, battleCtx?.opponent ?? ''),
+    whyWon: str(d.battle?.whyWon, battleCtx?.whyWon ?? battleCtx?.reason ?? ''),
+    keyDifference: str(d.battle?.keyDifference, battleCtx?.keyDifference ?? ''),
+    confidence: Math.max(60, Math.min(95, Number(d.battle?.confidence) || Number(battleCtx?.confidence) || 75)),
+    recommendation: str(d.battle?.recommendation, battleCtx?.recommendation ?? ''),
+  };
+
+  d.market = d.market ?? { country, language: locale.language, currency: locale.currency, tone: locale.tone };
+
+  d.winnerSnapshot = {
+    battleAdvantage: str(d.winnerSnapshot?.battleAdvantage),
+    mainRisks: arr(d.winnerSnapshot?.mainRisks).slice(0, 4).map(String),
+    missingValidations: arr(d.winnerSnapshot?.missingValidations).slice(0, 4).map(String),
+  };
+
+  const sd = d.strategicDecision ?? {};
+  d.strategicDecision = {
+    whyLaunch: str(sd.whyLaunch), functionalProblem: str(sd.functionalProblem),
+    emotionalProblem: str(sd.emotionalProblem), mainDesire: str(sd.mainDesire),
+    alternativeReplaced: str(sd.alternativeReplaced), mainHypothesis: str(sd.mainHypothesis),
+    killRisk: str(sd.killRisk),
+  };
+
+  const ue = d.unitEconomics ?? {};
+  d.unitEconomics = {
+    suggestedRetailPrice: str(ue.suggestedRetailPrice), estimatedLandedCost: str(ue.estimatedLandedCost),
+    grossMarginUSD: str(ue.grossMarginUSD), grossMarginPct: str(ue.grossMarginPct),
+    maxCACRecommendation: str(ue.maxCACRecommendation), breakEvenLogic: str(ue.breakEvenLogic),
+    recommendedOffer: str(ue.recommendedOffer), bundleIdea: str(ue.bundleIdea),
+    discountLimit: str(ue.discountLimit),
+  };
+
+  const pos = d.positioning ?? {};
+  d.positioning = {
+    categoryFraming: str(pos.categoryFraming), oneLiner: str(pos.oneLiner),
+    mainPromise: str(pos.mainPromise), dangerousPromises: arr(pos.dangerousPromises).map(String),
+    primaryAudience: str(pos.primaryAudience), secondaryAudience: str(pos.secondaryAudience),
+    useCases: arr(pos.useCases).map(String), objectionsToOvercome: arr(pos.objectionsToOvercome).map(String),
+  };
+
+  d.creativeAngles = arr(d.creativeAngles).map((a: any, i: number) => ({
+    id: str(a.id, `ca_0${i + 1}`), name: str(a.name), emotion: str(a.emotion),
+    hook: str(a.hook), visualDirection: str(a.visualDirection),
+    objectionAttacked: str(a.objectionAttacked), hypothesis: str(a.hypothesis),
+    risk: str(a.risk), confidence: ['high','medium','low'].includes(a.confidence) ? a.confidence : 'medium',
   }));
+  if (d.creativeAngles.length === 0) d.creativeAngles = buildFallback(winnerData, battleCtx).creativeAngles;
 
-  // Clamp shot priorities
-  data.shotList = data.shotList.map((s: any) => ({
-    ...s,
-    priority: ['must-have','nice-to-have'].includes(s.priority) ? s.priority : 'nice-to-have',
+  const ctp = d.creativeTestingPlan ?? {};
+  d.creativeTestingPlan = {
+    staticAds: arr(ctp.staticAds).map((s: any, i: number) => ({
+      id: str(s.id, `sa_0${i + 1}`), concept: str(s.concept), hook: str(s.hook),
+      copy: str(s.copy), whatItTests: str(s.whatItTests), winSignal: str(s.winSignal), winAction: str(s.winAction),
+    })),
+    ugcBriefs: arr(ctp.ugcBriefs).map((u: any, i: number) => ({
+      id: str(u.id, `ugc_0${i + 1}`), hook: str(u.hook), brief: str(u.brief),
+      whatItTests: str(u.whatItTests), winSignal: str(u.winSignal),
+    })),
+    hookVariations: arr(ctp.hookVariations).map(String),
+  };
+
+  const sl = d.storeLanding ?? {};
+  d.storeLanding = {
+    headline: str(sl.headline), subheadline: str(sl.subheadline), heroCopy: str(sl.heroCopy),
+    benefits: arr(sl.benefits).map(String), problemStatement: str(sl.problemStatement),
+    solutionStatement: str(sl.solutionStatement), howItWorks: arr(sl.howItWorks).map(String),
+    objectionsFAQ: arr(sl.objectionsFAQ).map((f: any) => ({ q: str(f.q), a: str(f.a) })),
+    cta: str(sl.cta, 'Comprar ahora'), shortDescription: str(sl.shortDescription),
+    longDescription: str(sl.longDescription), blockOrder: arr(sl.blockOrder).map(String),
+  };
+
+  const piv = d.preImportValidation ?? {};
+  d.preImportValidation = {
+    supplierQuestions: arr(piv.supplierQuestions).map(String),
+    mediaToRequest: arr(piv.mediaToRequest).map(String),
+    certificationsToVerify: arr(piv.certificationsToVerify).map(String),
+    sampleTests: arr(piv.sampleTests).map(String),
+    killConditions: arr(piv.killConditions).map(String),
+    firstStockRecommendation: str(piv.firstStockRecommendation),
+  };
+
+  d.launchPlan = arr(d.launchPlan).map((p: any) => ({
+    period: str(p.period), focus: str(p.focus),
+    tasks: arr(p.tasks).map(String), checkpoint: str(p.checkpoint),
   }));
+  if (d.launchPlan.length === 0) d.launchPlan = buildFallback(winnerData, battleCtx).launchPlan;
 
-  // Ensure storeDirection
-  if (!data.storeDirection || typeof data.storeDirection !== 'object') {
-    data.storeDirection = { heroHeadline: '', heroSubheadline: '', cta: 'Comprar ahora', keySections: [], topObjections: [], shortDescription: '' };
-  }
-  data.storeDirection.keySections   = cleanArr(data.storeDirection.keySections);
-  data.storeDirection.topObjections = cleanArr(data.storeDirection.topObjections);
-
-  // Ensure product panel
-  if (!data.product || typeof data.product !== 'object') {
-    data.product = { title: '', score: 0, verdict: 'maybe', mainOpportunity: '', mainRisk: '', whyPursue: '' };
-  }
-
-  // Ensure market
-  if (!data.market || typeof data.market !== 'object') {
-    data.market = { country: 'AR', language: 'Español rioplatense', currency: 'ARS', tone: 'Directo, vos' };
-  }
-
-  return data;
+  return d;
 }
 
-// ─── Route handler ───────────────────────────────────────────────────────────
+// ─── Route handler ────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
-  let data: any;
-  try { data = await req.json(); }
+  let body: any;
+  try { body = await req.json(); }
   catch { return NextResponse.json({ error: 'Payload inválido' }, { status: 400 }); }
 
-  if (!data?.result) return NextResponse.json({ error: 'Falta result del análisis' }, { status: 400 });
+  // Accept either new format { winnerData, battleContext } or legacy { ...AnalysisPayload }
+  const winnerData = body.winnerData ?? body;
+  const battleCtx  = body.battleContext ?? body.battle ?? null;
+
+  if (!winnerData?.result) {
+    return NextResponse.json({ error: 'Falta result del análisis del ganador' }, { status: 400 });
+  }
 
   try {
-    const raw = await generatePreSample(data);
-    const result = sanitize(raw);
+    const raw    = await generateLaunchCommand(winnerData, battleCtx);
+    const result = sanitize(raw, winnerData, battleCtx);
     return NextResponse.json(result);
   } catch (err) {
-    console.error('[pre-sample-studio] error:', err);
-    const fallback = sanitize(buildFallback(data));
+    console.error('[pre-sample-studio] unexpected error:', err);
+    const fallback = sanitize(buildFallback(winnerData, battleCtx), winnerData, battleCtx);
     return NextResponse.json(fallback);
   }
 }
